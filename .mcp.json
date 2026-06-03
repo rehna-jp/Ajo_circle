@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gooddocs": {
+      "type": "http",
+      "url": "https://docs.gooddollar.org/~gitbook/mcp"
+    }
+  }
+}

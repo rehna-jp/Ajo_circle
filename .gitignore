@@ -1,0 +1,50 @@
+# ────────────────────────────────────────────────
+# Foundry / Contracts
+# ────────────────────────────────────────────────
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/.env
+contracts/lcov.info
+
+# ────────────────────────────────────────────────
+# Node / Frontend
+# ────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.*.local
+
+# ────────────────────────────────────────────────
+# Environment & secrets
+# ────────────────────────────────────────────────
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+
+# ────────────────────────────────────────────────
+# OS / Editor
+# ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+*.iml
+
+# ────────────────────────────────────────────────
+# Misc
+# ────────────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.turbo/
+coverage/
+*.lcov
