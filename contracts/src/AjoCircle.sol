@@ -1,266 +1,343 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.19;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IIdentity} from "./interfaces/IIdentity.sol";
+
+/// @dev Matches the AjoYieldVault interface — deposit pulls tokens, withdrawAll returns the full pot.
+interface IYieldVault {
+    function deposit(uint256 amount) external;
+    function withdrawAll() external returns (uint256 total);
+}
 
 /**
  * @title AjoCircle
- * @notice Decentralised rotating savings circle (ROSCA) denominated in any ERC-20 token.
- *         Members contribute equal amounts each round; the full pot rotates to one member
- *         per round in join order until every member has received exactly one payout.
+ * @notice A single rotating savings circle (ROSCA) instance on Celo, denominated in G$ tokens.
+ *         Each deployed AjoCircle represents one savings group. Members join by posting
+ *         collateral, then contribute G$ each cycle. At the end of a cycle the full pot
+ *         (contributions + any vault yield) is sent to one member in join order. This repeats
+ *         until every original member has received the pot exactly once.
+ * @dev    Deployed and tracked by {AjoFactory}. The `members` array is append-only; slashed
+ *         members are deactivated via `isMember` rather than removed, so join-order indices
+ *         remain stable across the lifetime of the circle.
  */
 contract AjoCircle is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    // ─── Types ───────────────────────────────────────────────────────────────
+    // ─── Constants ────────────────────────────────────────────────────────────
 
-    enum Status {
-        Open, // accepting members, not yet started
-        Active, // contributions & payouts in progress
-        Completed // all rounds done
-    }
+    /// @notice Join collateral expressed in basis points. 1000 = 10% of `contributionAmount`.
+    uint256 public constant COLLATERAL_BPS = 1000;
 
-    struct Circle {
-        address creator;
-        IERC20 token;
-        uint256 contributionAmount;
-        uint256 maxMembers;
-        uint256 roundDuration; // seconds; informational — not enforced on-chain
-        address[] members;
-        uint256 currentRound;
-        uint256 roundStartTime;
-        uint256 contributionCount; // resets each round
-        Status status;
-        mapping(address => bool) isMember;
-        mapping(uint256 => mapping(address => bool)) contributed; // round → member → paid
-        mapping(uint256 => bool) roundPaidOut;
-    }
+    // ─── Circle metadata ──────────────────────────────────────────────────────
 
-    struct CircleView {
-        uint256 id;
-        address creator;
-        address token;
-        uint256 contributionAmount;
-        uint256 maxMembers;
-        uint256 roundDuration;
-        address[] members;
-        uint256 currentRound;
-        uint256 roundStartTime;
-        uint256 contributionCount;
-        Status status;
-    }
+    string public name;
+    uint256 public contributionAmount;
+    uint256 public maxMembers;
+    uint256 public cycleDuration;
 
-    // ─── State ───────────────────────────────────────────────────────────────
+    // ─── Addresses ────────────────────────────────────────────────────────────
 
-    uint256 public circleCount;
-    mapping(uint256 => Circle) private _circles;
+    address public gDollarToken;
+    address public yieldVault;
+    address public identityContract;
+    address public creator;
+
+    // ─── Cycle tracking ───────────────────────────────────────────────────────
+
+    uint256 public currentCycle;
+    uint256 public cycleStartTime;
+    uint256 public currentPayoutIndex;
+
+    // ─── Members ──────────────────────────────────────────────────────────────
+
+    /// @notice All addresses that have ever joined, in join order. Never shrinks.
+    address[] public members;
+
+    /// @notice Count of currently active (non-slashed) members.
+    uint256 public activeMemberCount;
+
+    /// @notice True when `account` is an active, non-slashed member.
+    mapping(address => bool) public isMember;
+
+    /// @notice Collateral posted by each member; zeroed upon slash.
+    mapping(address => uint256) public collateral;
+
+    // ─── Contributions ────────────────────────────────────────────────────────
+
+    mapping(address => mapping(uint256 => bool)) public hasContributed;
+
+    // ─── Payouts ──────────────────────────────────────────────────────────────
+
+    mapping(address => bool) public hasReceivedPayout;
+
+    // ─── Private accounting ───────────────────────────────────────────────────
+
+    /// @dev Running total of G$ deposited this cycle. Used as the pot when no vault is set.
+    uint256 private _cycleDeposits;
 
     // ─── Events ──────────────────────────────────────────────────────────────
 
-    event CircleCreated(
-        uint256 indexed id,
-        address indexed creator,
-        address token,
-        uint256 contributionAmount,
-        uint256 maxMembers,
-        uint256 roundDuration
-    );
-    event MemberJoined(uint256 indexed id, address indexed member);
-    event CircleStarted(uint256 indexed id, uint256 startTime);
-    event ContributionMade(uint256 indexed id, uint256 indexed round, address indexed contributor);
-    event PayoutDistributed(
-        uint256 indexed id, uint256 indexed round, address indexed recipient, uint256 amount
-    );
-    event CircleCompleted(uint256 indexed id);
+    event MemberJoined(address indexed member, uint256 collateralAmount);
+    event ContributionMade(address indexed member, uint256 indexed cycle, uint256 amount);
+    event PayoutSent(address indexed recipient, uint256 indexed cycle, uint256 amount);
+    event CollateralSlashed(address indexed member, uint256 amount);
+    event MemberRemoved(address indexed member);
 
     // ─── Errors ──────────────────────────────────────────────────────────────
 
-    error Unauthorized();
-    error InvalidParam(string reason);
-    error CircleNotOpen();
-    error CircleNotActive();
     error AlreadyMember();
     error CircleFull();
+    error IdentityNotVerified();
     error NotMember();
+    error CircleNotStarted();
     error AlreadyContributed();
-    error RoundNotComplete();
-    error RoundAlreadyPaidOut();
+    error CycleNotEnded();
+    error NoPayoutsRemaining();
+    error NoEligibleRecipient();
+    error EmptyPot();
 
-    // ─── Modifiers ───────────────────────────────────────────────────────────
-
-    modifier onlyCreator(uint256 id) {
-        if (_circles[id].creator != msg.sender) revert Unauthorized();
-        _;
-    }
-
-    modifier onlyMember(uint256 id) {
-        if (!_circles[id].isMember[msg.sender]) revert NotMember();
-        _;
-    }
-
-    // ─── External functions ──────────────────────────────────────────────────
+    // ─── Constructor ─────────────────────────────────────────────────────────
 
     /**
-     * @notice Create a new savings circle. The caller automatically becomes the first member.
-     * @param token            ERC-20 token used for contributions (e.g. G$ on Celo).
-     * @param contributionAmount Amount each member contributes per round (in token wei).
-     * @param maxMembers       Total seats in the circle (2–20).
-     * @param roundDuration    Suggested round length in seconds (≥ 1 day); informational only.
-     * @return id              ID of the newly created circle.
+     * @notice Deploy a new AjoCircle instance. Intended to be called only by {AjoFactory}.
+     * @param _name               Human-readable circle name (non-empty).
+     * @param _contributionAmount G$ amount each member contributes per cycle (> 0).
+     * @param _maxMembers         Total member seats, inclusive (2–20).
+     * @param _cycleDuration      Minimum cycle length in seconds (≥ 1 day).
+     * @param _gDollarToken       G$ ERC-20 token address on Celo (non-zero).
+     * @param _yieldVault         AjoYieldVault address for idle fund yield; address(0) disables.
+     * @param _identityContract   GoodDollar identity registry; address(0) disables KYC check.
+     * @param _creator            Address of the factory caller that initiated deployment.
      */
-    function createCircle(
-        address token,
-        uint256 contributionAmount,
-        uint256 maxMembers,
-        uint256 roundDuration
-    ) external returns (uint256 id) {
-        if (token == address(0)) revert InvalidParam("zero token");
-        if (contributionAmount == 0) revert InvalidParam("zero contribution");
-        if (maxMembers < 2 || maxMembers > 20) revert InvalidParam("maxMembers 2-20");
-        if (roundDuration < 1 days) revert InvalidParam("roundDuration >= 1 day");
+    constructor(
+        string memory _name,
+        uint256 _contributionAmount,
+        uint256 _maxMembers,
+        uint256 _cycleDuration,
+        address _gDollarToken,
+        address _yieldVault,
+        address _identityContract,
+        address _creator
+    ) {
+        require(bytes(_name).length > 0, "empty name");
+        require(_contributionAmount > 0, "zero contribution");
+        require(_maxMembers >= 2 && _maxMembers <= 20, "maxMembers 2-20");
+        require(_cycleDuration >= 1 days, "cycleDuration >= 1 day");
+        require(_gDollarToken != address(0), "zero token");
+        require(_creator != address(0), "zero creator");
 
-        id = circleCount++;
-        Circle storage c = _circles[id];
-        c.creator = msg.sender;
-        c.token = IERC20(token);
-        c.contributionAmount = contributionAmount;
-        c.maxMembers = maxMembers;
-        c.roundDuration = roundDuration;
-        c.status = Status.Open;
-
-        c.members.push(msg.sender);
-        c.isMember[msg.sender] = true;
-
-        emit CircleCreated(id, msg.sender, token, contributionAmount, maxMembers, roundDuration);
-        emit MemberJoined(id, msg.sender);
+        name = _name;
+        contributionAmount = _contributionAmount;
+        maxMembers = _maxMembers;
+        cycleDuration = _cycleDuration;
+        gDollarToken = _gDollarToken;
+        yieldVault = _yieldVault;
+        identityContract = _identityContract;
+        creator = _creator;
     }
 
-    /**
-     * @notice Join an open circle. Reverts if the circle is full or already started.
-     */
-    function joinCircle(uint256 id) external {
-        Circle storage c = _circles[id];
-        if (c.status != Status.Open) revert CircleNotOpen();
-        if (c.isMember[msg.sender]) revert AlreadyMember();
-        if (c.members.length >= c.maxMembers) revert CircleFull();
-
-        c.members.push(msg.sender);
-        c.isMember[msg.sender] = true;
-
-        emit MemberJoined(id, msg.sender);
-    }
+    // ─── External functions ───────────────────────────────────────────────────
 
     /**
-     * @notice Creator starts the circle. Requires ≥ 2 members.
+     * @notice Join the savings circle by posting G$ collateral.
+     * @dev    Collateral = `contributionAmount` × COLLATERAL_BPS / 10_000 (10% by default).
+     *         When `identityContract` is set, the caller must be GoodDollar-whitelisted.
+     *         Filling the final seat atomically starts the first cycle by setting
+     *         `cycleStartTime` to the current block timestamp.
+     *         Caller must pre-approve this contract for the collateral amount before calling.
      */
-    function startCircle(uint256 id) external onlyCreator(id) {
-        Circle storage c = _circles[id];
-        if (c.status != Status.Open) revert CircleNotOpen();
-        if (c.members.length < 2) revert InvalidParam("need >= 2 members");
+    function joinCircle() external nonReentrant {
+        if (isMember[msg.sender]) revert AlreadyMember();
+        if (activeMemberCount >= maxMembers) revert CircleFull();
+        if (
+            identityContract != address(0)
+                && !IIdentity(identityContract).isWhitelisted(msg.sender)
+        ) revert IdentityNotVerified();
 
-        c.status = Status.Active;
-        c.roundStartTime = block.timestamp;
+        uint256 collateralAmount = (contributionAmount * COLLATERAL_BPS) / 10_000;
+        IERC20(gDollarToken).safeTransferFrom(msg.sender, address(this), collateralAmount);
 
-        emit CircleStarted(id, block.timestamp);
+        members.push(msg.sender);
+        activeMemberCount++;
+        isMember[msg.sender] = true;
+        collateral[msg.sender] = collateralAmount;
+
+        // Starting the circle is an effect, so set it before emitting.
+        if (activeMemberCount == maxMembers) {
+            cycleStartTime = block.timestamp;
+        }
+
+        emit MemberJoined(msg.sender, collateralAmount);
     }
 
     /**
-     * @notice Contribute to the current round. Caller must have approved this contract.
-     *         Automatically distributes the payout when all members have contributed.
+     * @notice Contribute `contributionAmount` of G$ for the current cycle.
+     * @dev    When a `yieldVault` is configured, tokens are forwarded to the vault
+     *         immediately after transfer so they earn yield until payout.
+     *         Caller must pre-approve this contract for `contributionAmount` before calling.
      */
-    function contribute(uint256 id) external nonReentrant onlyMember(id) {
-        Circle storage c = _circles[id];
-        if (c.status != Status.Active) revert CircleNotActive();
+    function contribute() external nonReentrant {
+        if (!isMember[msg.sender]) revert NotMember();
+        if (cycleStartTime == 0) revert CircleNotStarted();
+        if (hasContributed[msg.sender][currentCycle]) revert AlreadyContributed();
 
-        uint256 round = c.currentRound;
-        if (c.contributed[round][msg.sender]) revert AlreadyContributed();
+        IERC20(gDollarToken).safeTransferFrom(msg.sender, address(this), contributionAmount);
 
-        c.contributed[round][msg.sender] = true;
-        c.contributionCount++;
+        if (yieldVault != address(0)) {
+            IERC20(gDollarToken).forceApprove(yieldVault, contributionAmount);
+            IYieldVault(yieldVault).deposit(contributionAmount);
+        }
 
-        c.token.safeTransferFrom(msg.sender, address(this), c.contributionAmount);
-        emit ContributionMade(id, round, msg.sender);
+        hasContributed[msg.sender][currentCycle] = true;
+        _cycleDeposits += contributionAmount;
 
-        if (c.contributionCount == c.members.length) {
-            _distributeRound(id);
+        emit ContributionMade(msg.sender, currentCycle, contributionAmount);
+    }
+
+    /**
+     * @notice End the current cycle: slash non-contributors, collect the pot, and pay
+     *         the designated cycle recipient.
+     * @dev    Can be called by anyone once `cycleStartTime + cycleDuration` has elapsed.
+     *         Follows checks-effects-interactions: all state mutations happen before any
+     *         external token transfers. Non-contributors are slashed before the pot is
+     *         withdrawn from the vault; slashed collateral is distributed pro-rata to
+     *         compliant members as a separate transfer pass.
+     */
+    function triggerPayout() external nonReentrant {
+        if (cycleStartTime == 0) revert CircleNotStarted();
+        if (block.timestamp < cycleStartTime + cycleDuration) revert CycleNotEnded();
+        if (currentCycle >= maxMembers) revert NoPayoutsRemaining();
+
+        // Walk the join-order list to find the next active, unpaid member.
+        uint256 idx = currentPayoutIndex;
+        while (
+            idx < members.length
+                && (!isMember[members[idx]] || hasReceivedPayout[members[idx]])
+        ) {
+            idx++;
+        }
+        if (idx >= members.length) revert NoEligibleRecipient();
+
+        address recipient = members[idx];
+
+        // ── Effects ───────────────────────────────────────────────────────────
+        hasReceivedPayout[recipient] = true;
+        currentPayoutIndex = idx + 1;
+        uint256 cycleJustFinished = currentCycle;
+        currentCycle++;
+        uint256 deposited = _cycleDeposits;
+        _cycleDeposits = 0;
+        cycleStartTime = block.timestamp; // begin next cycle window
+
+        // ── Interactions ──────────────────────────────────────────────────────
+
+        // 1. Slash non-contributors and redistribute their collateral to compliant members.
+        _slashNonContributors(cycleJustFinished);
+
+        // 2. Collect the pot: withdraw from vault (principal + yield), or use direct tally.
+        uint256 pot;
+        if (yieldVault != address(0)) {
+            pot = IYieldVault(yieldVault).withdrawAll();
+        } else {
+            pot = deposited;
+        }
+        if (pot == 0) revert EmptyPot();
+
+        // 3. Pay the recipient.
+        IERC20(gDollarToken).safeTransfer(recipient, pot);
+        emit PayoutSent(recipient, cycleJustFinished, pot);
+    }
+
+    // ─── View functions ───────────────────────────────────────────────────────
+
+    /**
+     * @notice Number of currently active (non-slashed) members.
+     * @return count Active member count.
+     */
+    function getMemberCount() external view returns (uint256 count) {
+        return activeMemberCount;
+    }
+
+    /**
+     * @notice Active member addresses in join order (slashed members excluded).
+     * @return active Packed array of currently active member addresses.
+     */
+    function getMembers() external view returns (address[] memory active) {
+        active = new address[](activeMemberCount);
+        uint256 j;
+        for (uint256 i; i < members.length; i++) {
+            if (isMember[members[i]]) active[j++] = members[i];
         }
     }
 
     /**
-     * @notice Manually trigger payout distribution once all contributions are in.
-     *         Normally called automatically by `contribute`; exposed as a fallback.
+     * @notice The next scheduled payout recipient and the timestamp when the cycle ends.
+     * @return recipient Address of the next member in line for the pot; address(0) if none.
+     * @return cycleEnd  Unix timestamp after which `triggerPayout` can be called.
      */
-    function distributeRound(uint256 id) external nonReentrant {
-        Circle storage c = _circles[id];
-        if (c.status != Status.Active) revert CircleNotActive();
-        if (c.contributionCount < c.members.length) revert RoundNotComplete();
-        _distributeRound(id);
+    function getNextPayout() external view returns (address recipient, uint256 cycleEnd) {
+        uint256 idx = currentPayoutIndex;
+        while (
+            idx < members.length
+                && (!isMember[members[idx]] || hasReceivedPayout[members[idx]])
+        ) {
+            idx++;
+        }
+        recipient = idx < members.length ? members[idx] : address(0);
+        cycleEnd = cycleStartTime + cycleDuration;
     }
 
-    // ─── Views ───────────────────────────────────────────────────────────────
-
-    function getCircle(uint256 id) external view returns (CircleView memory) {
-        Circle storage c = _circles[id];
-        return CircleView({
-            id: id,
-            creator: c.creator,
-            token: address(c.token),
-            contributionAmount: c.contributionAmount,
-            maxMembers: c.maxMembers,
-            roundDuration: c.roundDuration,
-            members: c.members,
-            currentRound: c.currentRound,
-            roundStartTime: c.roundStartTime,
-            contributionCount: c.contributionCount,
-            status: c.status
-        });
-    }
-
-    function hasContributed(uint256 id, uint256 round, address member)
-        external
-        view
-        returns (bool)
-    {
-        return _circles[id].contributed[round][member];
-    }
-
-    function isMember(uint256 id, address account) external view returns (bool) {
-        return _circles[id].isMember[account];
-    }
-
-    function currentRecipient(uint256 id) external view returns (address) {
-        Circle storage c = _circles[id];
-        if (c.status != Status.Active) return address(0);
-        return c.members[c.currentRound % c.members.length];
+    /**
+     * @notice Returns true if `account` is currently an active (non-slashed) member.
+     * @param account Address to query.
+     * @return        True when `account` holds an active seat in this circle.
+     */
+    function isMemberActive(address account) external view returns (bool) {
+        return isMember[account];
     }
 
     // ─── Internal ────────────────────────────────────────────────────────────
 
-    function _distributeRound(uint256 id) internal {
-        Circle storage c = _circles[id];
-        uint256 round = c.currentRound;
+    /**
+     * @notice Slash every active member who did not contribute in `cycle` and distribute
+     *         the seized collateral equally among compliant members.
+     * @dev    Two-pass approach: first pass is effects-only (update state, emit events);
+     *         second pass is the actual G$ transfer to compliant members.
+     * @param cycle The cycle index whose contributions are checked.
+     */
+    function _slashNonContributors(uint256 cycle) internal {
+        uint256 totalSlashed;
 
-        if (c.roundPaidOut[round]) revert RoundAlreadyPaidOut();
+        // Pass 1 — effects: identify non-contributors, zero their collateral, deactivate.
+        for (uint256 i; i < members.length; i++) {
+            address member = members[i];
+            if (!isMember[member]) continue;
 
-        address recipient = c.members[round % c.members.length];
-        uint256 payout = c.contributionAmount * c.members.length;
-
-        // Effects before interaction (CEI)
-        c.roundPaidOut[round] = true;
-        c.contributionCount = 0;
-        c.currentRound = round + 1;
-
-        if (c.currentRound >= c.members.length) {
-            c.status = Status.Completed;
+            if (!hasContributed[member][cycle] && collateral[member] > 0) {
+                uint256 amount = collateral[member];
+                collateral[member] = 0;
+                isMember[member] = false;
+                activeMemberCount--;
+                totalSlashed += amount;
+                emit CollateralSlashed(member, amount);
+                emit MemberRemoved(member);
+            }
         }
 
-        c.token.safeTransfer(recipient, payout);
-        emit PayoutDistributed(id, round, recipient, payout);
-
-        if (c.status == Status.Completed) {
-            emit CircleCompleted(id);
+        // Pass 2 — interactions: distribute seized collateral pro-rata to compliant members.
+        if (totalSlashed > 0 && activeMemberCount > 0) {
+            uint256 share = totalSlashed / activeMemberCount;
+            if (share > 0) {
+                for (uint256 i; i < members.length; i++) {
+                    if (isMember[members[i]]) {
+                        IERC20(gDollarToken).safeTransfer(members[i], share);
+                    }
+                }
+            }
+            // Dust (totalSlashed % activeMemberCount) stays in the contract.
         }
     }
 }

@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
+import {AjoFactory} from "../src/AjoFactory.sol";
 import {AjoCircle} from "../src/AjoCircle.sol";
+import {AjoYieldVault} from "../src/AjoYieldVault.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-// Minimal mintable token for tests
+// ─── Mock contracts ───────────────────────────────────────────────────────────
+
 contract MockGDollar is ERC20 {
     constructor() ERC20("GoodDollar", "G$") {}
 
@@ -14,375 +17,513 @@ contract MockGDollar is ERC20 {
     }
 }
 
+/// @dev Configurable per-address whitelist — simulates the GoodDollar identity registry.
+contract MockIdentity {
+    mapping(address => bool) private _whitelist;
+
+    function setWhitelisted(address account, bool status) external {
+        _whitelist[account] = status;
+    }
+
+    function isWhitelisted(address account) external view returns (bool) {
+        return _whitelist[account];
+    }
+}
+
+// ─── Test suite ───────────────────────────────────────────────────────────────
+
 contract AjoCircleTest is Test {
-    AjoCircle public ajo;
-    MockGDollar public token;
+    // ── Constants ────────────────────────────────────────────────────────────
 
-    address internal alice = makeAddr("alice");
-    address internal bob = makeAddr("bob");
-    address internal carol = makeAddr("carol");
+    uint256 constant CONTRIBUTION = 100e18;
+    uint256 constant CYCLE        = 7 days;
+    uint256 constant MAX_MEMBERS  = 3;
+    uint256 constant YIELD_AMOUNT = 30e18;
 
-    uint256 internal constant CONTRIBUTION = 100e18;
-    uint256 internal constant ROUND_DURATION = 7 days;
-    uint256 internal constant MAX_MEMBERS = 3;
+    // ── Re-declared events for vm.expectEmit ─────────────────────────────────
 
-    event CircleCreated(
-        uint256 indexed id,
-        address indexed creator,
+    // AjoCircle
+    event MemberJoined(address indexed member, uint256 collateralAmount);
+    event ContributionMade(address indexed member, uint256 indexed cycle, uint256 amount);
+    event PayoutSent(address indexed recipient, uint256 indexed cycle, uint256 amount);
+    event CollateralSlashed(address indexed member, uint256 amount);
+    event MemberRemoved(address indexed member);
+    // AjoYieldVault
+    event Deposited(address indexed circle, uint256 amount);
+    event Withdrawn(address indexed circle, uint256 amount, uint256 yield);
+
+    // ── Pure helpers ─────────────────────────────────────────────────────────
+
+    /// @dev Matches AjoCircle.COLLATERAL_BPS = 1000 (10 %).
+    function _collateral(uint256 amount) internal pure returns (uint256) {
+        return (amount * 1000) / 10_000;
+    }
+
+    // ── Deployment helpers ───────────────────────────────────────────────────
+
+    function _deployCore()
+        internal
+        returns (MockGDollar token, MockIdentity identity, AjoFactory factory)
+    {
+        token    = new MockGDollar();
+        identity = new MockIdentity();
+        factory  = new AjoFactory();
+    }
+
+    /// Deploy a circle with no yield vault.
+    function _newCircle(
+        AjoFactory factory,
         address token,
-        uint256 contributionAmount,
-        uint256 maxMembers,
-        uint256 roundDuration
-    );
-    event MemberJoined(uint256 indexed id, address indexed member);
-    event CircleStarted(uint256 indexed id, uint256 startTime);
-    event ContributionMade(uint256 indexed id, uint256 indexed round, address indexed contributor);
-    event PayoutDistributed(
-        uint256 indexed id, uint256 indexed round, address indexed recipient, uint256 amount
-    );
-    event CircleCompleted(uint256 indexed id);
-
-    function setUp() public {
-        ajo = new AjoCircle();
-        token = new MockGDollar();
-
-        token.mint(alice, 10_000e18);
-        token.mint(bob, 10_000e18);
-        token.mint(carol, 10_000e18);
-
-        vm.prank(alice);
-        token.approve(address(ajo), type(uint256).max);
-        vm.prank(bob);
-        token.approve(address(ajo), type(uint256).max);
-        vm.prank(carol);
-        token.approve(address(ajo), type(uint256).max);
+        address identity,
+        uint256 amount
+    ) internal returns (AjoCircle) {
+        address addr = factory.createCircle(
+            "Test Circle", amount, MAX_MEMBERS, CYCLE, token, address(0), identity
+        );
+        return AjoCircle(addr);
     }
 
-    // ─── createCircle ─────────────────────────────────────────────────────────
-
-    function test_CreateCircle_StoresCorrectState() public {
-        vm.prank(alice);
-        vm.expectEmit(true, true, false, true);
-        emit CircleCreated(0, alice, address(token), CONTRIBUTION, MAX_MEMBERS, ROUND_DURATION);
-        uint256 id = ajo.createCircle(address(token), CONTRIBUTION, MAX_MEMBERS, ROUND_DURATION);
-
-        AjoCircle.CircleView memory c = ajo.getCircle(id);
-        assertEq(c.creator, alice);
-        assertEq(c.token, address(token));
-        assertEq(c.contributionAmount, CONTRIBUTION);
-        assertEq(c.maxMembers, MAX_MEMBERS);
-        assertEq(c.roundDuration, ROUND_DURATION);
-        assertEq(c.members.length, 1);
-        assertEq(c.members[0], alice);
-        assertEq(uint8(c.status), uint8(AjoCircle.Status.Open));
-        assertTrue(ajo.isMember(id, alice));
+    /// Deploy a circle wired to a vault; approve the new circle in the vault.
+    /// The test contract must own the vault (deploy it without pranking).
+    function _newCircleWithVault(
+        AjoFactory factory,
+        address token,
+        address identity,
+        AjoYieldVault vault,
+        uint256 amount
+    ) internal returns (AjoCircle) {
+        address addr = factory.createCircle(
+            "Vault Circle", amount, MAX_MEMBERS, CYCLE, token, address(vault), identity
+        );
+        vault.approveCircle(addr); // test contract is vault owner
+        return AjoCircle(addr);
     }
 
-    function test_CreateCircle_IncrementsCircleCount() public {
-        vm.startPrank(alice);
-        ajo.createCircle(address(token), CONTRIBUTION, MAX_MEMBERS, ROUND_DURATION);
-        ajo.createCircle(address(token), CONTRIBUTION, MAX_MEMBERS, ROUND_DURATION);
+    // ── Member helpers ───────────────────────────────────────────────────────
+
+    /// Whitelist, fund, approve, and join — all in one call.
+    function _prepareAndJoin(
+        address member,
+        MockGDollar token,
+        MockIdentity identity,
+        AjoCircle circle,
+        uint256 mintAmount
+    ) internal {
+        identity.setWhitelisted(member, true);
+        token.mint(member, mintAmount);
+        vm.startPrank(member);
+        token.approve(address(circle), type(uint256).max);
+        circle.joinCircle();
         vm.stopPrank();
-        assertEq(ajo.circleCount(), 2);
     }
 
-    function test_CreateCircle_RevertZeroToken() public {
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(AjoCircle.InvalidParam.selector, "zero token"));
-        ajo.createCircle(address(0), CONTRIBUTION, MAX_MEMBERS, ROUND_DURATION);
+    function _contribute(address member, AjoCircle circle) internal {
+        vm.prank(member);
+        circle.contribute();
     }
 
-    function test_CreateCircle_RevertZeroContribution() public {
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(AjoCircle.InvalidParam.selector, "zero contribution"));
-        ajo.createCircle(address(token), 0, MAX_MEMBERS, ROUND_DURATION);
+    // ── Composite fixture helpers ─────────────────────────────────────────────
+
+    /// Full setup with no vault: deploy everything, create circle, all 3 members join.
+    /// Filling the circle sets cycleStartTime. Members have generous token balances.
+    function _fullSetup()
+        internal
+        returns (
+            MockGDollar token,
+            AjoCircle circle,
+            address alice,
+            address bob,
+            address carol
+        )
+    {
+        (MockGDollar t, MockIdentity id, AjoFactory f) = _deployCore();
+        token  = t;
+        circle = _newCircle(f, address(t), address(id), CONTRIBUTION);
+
+        alice = makeAddr("alice");
+        bob   = makeAddr("bob");
+        carol = makeAddr("carol");
+
+        uint256 each = CONTRIBUTION * 6; // covers collateral + 3 full contribution cycles
+        _prepareAndJoin(alice, t, id, circle, each);
+        _prepareAndJoin(bob,   t, id, circle, each);
+        _prepareAndJoin(carol, t, id, circle, each); // fills circle → cycleStartTime = now
     }
 
-    function test_CreateCircle_RevertInvalidMaxMembers() public {
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(AjoCircle.InvalidParam.selector, "maxMembers 2-20"));
-        ajo.createCircle(address(token), CONTRIBUTION, 1, ROUND_DURATION);
-
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(AjoCircle.InvalidParam.selector, "maxMembers 2-20"));
-        ajo.createCircle(address(token), CONTRIBUTION, 21, ROUND_DURATION);
+    /// Extend _fullSetup: alice and bob contribute, carol defaults, time is warped.
+    /// Tests call triggerPayout themselves so they can set balance snapshots first.
+    function _setupOneDefaulter()
+        internal
+        returns (
+            MockGDollar token,
+            AjoCircle circle,
+            address alice,
+            address bob,
+            address carol
+        )
+    {
+        (token, circle, alice, bob, carol) = _fullSetup();
+        _contribute(alice, circle);
+        _contribute(bob,   circle);
+        // carol intentionally skips her contribution
+        vm.warp(block.timestamp + CYCLE + 1);
     }
 
-    function test_CreateCircle_RevertShortRoundDuration() public {
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(AjoCircle.InvalidParam.selector, "roundDuration >= 1 day")
-        );
-        ajo.createCircle(address(token), CONTRIBUTION, MAX_MEMBERS, 12 hours);
-    }
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Happy-path tests
+    // ═══════════════════════════════════════════════════════════════════════════
 
-    // ─── joinCircle ───────────────────────────────────────────────────────────
+    /**
+     * @notice End-to-end: 3 members join, all contribute, payout triggers correctly.
+     *         Verifies the PayoutSent event and alice's balance increase.
+     */
+    function test_FullCircleFlow() public {
+        (MockGDollar token, AjoCircle circle, address alice, address bob, address carol) =
+            _fullSetup();
 
-    function test_JoinCircle_AddsNewMember() public {
-        uint256 id = _createCircle(alice);
+        _contribute(alice, circle);
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
 
-        vm.prank(bob);
-        vm.expectEmit(true, true, false, false);
-        emit MemberJoined(id, bob);
-        ajo.joinCircle(id);
+        vm.warp(block.timestamp + CYCLE + 1);
 
-        assertTrue(ajo.isMember(id, bob));
-        assertEq(ajo.getCircle(id).members.length, 2);
-    }
-
-    function test_JoinCircle_RevertAlreadyMember() public {
-        uint256 id = _createCircle(alice);
-
-        vm.prank(alice);
-        vm.expectRevert(AjoCircle.AlreadyMember.selector);
-        ajo.joinCircle(id);
-    }
-
-    function test_JoinCircle_RevertCircleFull() public {
-        uint256 id = _createCircle(alice);
-        vm.prank(bob);
-        ajo.joinCircle(id);
-        vm.prank(carol);
-        ajo.joinCircle(id);
-
-        address dave = makeAddr("dave");
-        vm.prank(dave);
-        vm.expectRevert(AjoCircle.CircleFull.selector);
-        ajo.joinCircle(id);
-    }
-
-    function test_JoinCircle_RevertAfterStart() public {
-        uint256 id = _createAndStartCircle();
-
-        address dave = makeAddr("dave");
-        vm.prank(dave);
-        vm.expectRevert(AjoCircle.CircleNotOpen.selector);
-        ajo.joinCircle(id);
-    }
-
-    // ─── startCircle ──────────────────────────────────────────────────────────
-
-    function test_StartCircle_SetsActiveStatus() public {
-        uint256 id = _createCircle(alice);
-        vm.prank(bob);
-        ajo.joinCircle(id);
-
-        vm.prank(alice);
-        ajo.startCircle(id);
-
-        assertEq(uint8(ajo.getCircle(id).status), uint8(AjoCircle.Status.Active));
-    }
-
-    function test_StartCircle_RevertNotCreator() public {
-        uint256 id = _createCircle(alice);
-        vm.prank(bob);
-        ajo.joinCircle(id);
-
-        vm.prank(bob);
-        vm.expectRevert(AjoCircle.Unauthorized.selector);
-        ajo.startCircle(id);
-    }
-
-    function test_StartCircle_RevertNeedTwoMembers() public {
-        uint256 id = _createCircle(alice);
-
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(AjoCircle.InvalidParam.selector, "need >= 2 members")
-        );
-        ajo.startCircle(id);
-    }
-
-    // ─── contribute ───────────────────────────────────────────────────────────
-
-    function test_Contribute_TransfersTokens() public {
-        uint256 id = _createAndStartCircle();
+        uint256 pot = CONTRIBUTION * MAX_MEMBERS;
         uint256 aliceBefore = token.balanceOf(alice);
 
-        vm.prank(alice);
-        ajo.contribute(id);
+        vm.expectEmit(true, true, false, true);
+        emit PayoutSent(alice, 0, pot);
+        circle.triggerPayout();
 
-        assertEq(token.balanceOf(alice), aliceBefore - CONTRIBUTION);
-        assertEq(token.balanceOf(address(ajo)), CONTRIBUTION);
+        assertEq(token.balanceOf(alice) - aliceBefore, pot, "alice receives full pot");
+        assertEq(circle.currentCycle(), 1, "cycle counter increments");
+        assertTrue(circle.hasReceivedPayout(alice), "alice payout flag set");
     }
 
-    function test_Contribute_RevertAlreadyContributed() public {
-        uint256 id = _createAndStartCircle();
+    /**
+     * @notice Run all 3 cycles. Verify each member receives exactly once, in join order.
+     */
+    function test_PayoutRotation() public {
+        (MockGDollar token, AjoCircle circle, address alice, address bob, address carol) =
+            _fullSetup();
 
-        vm.prank(alice);
-        ajo.contribute(id);
+        // ── Cycle 0 → alice ───────────────────────────────────────────────────
+        _contribute(alice, circle);
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
+        vm.warp(block.timestamp + CYCLE + 1);
+
+        uint256 pot = CONTRIBUTION * MAX_MEMBERS;
+        uint256 snap = token.balanceOf(alice);
+        circle.triggerPayout();
+        assertEq(token.balanceOf(alice) - snap, pot, "cycle 0: alice receives");
+
+        // ── Cycle 1 → bob ─────────────────────────────────────────────────────
+        _contribute(alice, circle);
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
+        vm.warp(block.timestamp + CYCLE + 1);
+
+        snap = token.balanceOf(bob);
+        circle.triggerPayout();
+        assertEq(token.balanceOf(bob) - snap, pot, "cycle 1: bob receives");
+
+        // ── Cycle 2 → carol ───────────────────────────────────────────────────
+        _contribute(alice, circle);
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
+        vm.warp(block.timestamp + CYCLE + 1);
+
+        snap = token.balanceOf(carol);
+        circle.triggerPayout();
+        assertEq(token.balanceOf(carol) - snap, pot, "cycle 2: carol receives");
+
+        // ── All members paid exactly once ─────────────────────────────────────
+        assertTrue(circle.hasReceivedPayout(alice), "alice flagged");
+        assertTrue(circle.hasReceivedPayout(bob),   "bob flagged");
+        assertTrue(circle.hasReceivedPayout(carol),  "carol flagged");
+        assertEq(circle.currentCycle(), 3, "3 cycles completed");
+    }
+
+    /**
+     * @notice Simulated vault yield is included in the payout amount.
+     *         Owner mints extra G$ to the vault before triggering payout.
+     */
+    function test_YieldIncludedInPayout() public {
+        (MockGDollar token, MockIdentity identity, AjoFactory factory) = _deployCore();
+        AjoYieldVault vault = new AjoYieldVault(address(token), address(0));
+        AjoCircle circle = _newCircleWithVault(factory, address(token), address(identity), vault, CONTRIBUTION);
+
+        address alice = makeAddr("alice");
+        address bob   = makeAddr("bob");
+        address carol = makeAddr("carol");
+
+        uint256 each = CONTRIBUTION * 6;
+        _prepareAndJoin(alice, token, identity, circle, each);
+        _prepareAndJoin(bob,   token, identity, circle, each);
+        _prepareAndJoin(carol, token, identity, circle, each);
+
+        _contribute(alice, circle);
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
+
+        // Simulate yield: owner sends extra G$ directly to the vault.
+        token.mint(address(vault), YIELD_AMOUNT);
+
+        vm.warp(block.timestamp + CYCLE + 1);
+
+        uint256 aliceBefore = token.balanceOf(alice);
+
+        vm.expectEmit(true, true, false, true);
+        emit PayoutSent(alice, 0, CONTRIBUTION * MAX_MEMBERS + YIELD_AMOUNT);
+        circle.triggerPayout();
+
+        assertEq(
+            token.balanceOf(alice) - aliceBefore,
+            CONTRIBUTION * MAX_MEMBERS + YIELD_AMOUNT,
+            "payout must include simulated yield"
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Access-control tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice joinCircle reverts when the identity contract returns false.
+     */
+    function test_CannotJoinIfNotVerified() public {
+        (MockGDollar token, MockIdentity identity, AjoFactory factory) = _deployCore();
+        AjoCircle circle = _newCircle(factory, address(token), address(identity), CONTRIBUTION);
+
+        address eve = makeAddr("eve");
+        // identity.setWhitelisted(eve, true) intentionally omitted → defaults to false
+        token.mint(eve, CONTRIBUTION * 6);
+        vm.prank(eve);
+        token.approve(address(circle), type(uint256).max);
+
+        vm.prank(eve);
+        vm.expectRevert(AjoCircle.IdentityNotVerified.selector);
+        circle.joinCircle();
+    }
+
+    /**
+     * @notice A 4th joinCircle call on a 3-member circle reverts with CircleFull.
+     */
+    function test_CannotJoinIfFull() public {
+        (, AjoCircle circle, address alice, address bob, address carol) = _fullSetup();
+
+        // alice, bob, carol already joined — circle is at capacity
+        address dave = makeAddr("dave");
+
+        // Obtain the MockGDollar and MockIdentity used in _fullSetup via the circle.
+        MockGDollar token    = MockGDollar(circle.gDollarToken());
+
+        token.mint(dave, CONTRIBUTION * 6);
+        vm.startPrank(dave);
+        token.approve(address(circle), type(uint256).max);
+        vm.expectRevert(AjoCircle.CircleFull.selector);
+        circle.joinCircle();
+        vm.stopPrank();
+
+        // Suppress unused-variable warnings.
+        (alice, bob, carol);
+    }
+
+    /**
+     * @notice A second contribute call in the same cycle reverts with AlreadyContributed.
+     */
+    function test_CannotContributeTwice() public {
+        (, AjoCircle circle, address alice,,) = _fullSetup();
+
+        _contribute(alice, circle);
 
         vm.prank(alice);
         vm.expectRevert(AjoCircle.AlreadyContributed.selector);
-        ajo.contribute(id);
+        circle.contribute();
     }
 
-    function test_Contribute_RevertNotMember() public {
-        uint256 id = _createAndStartCircle();
+    /**
+     * @notice triggerPayout reverts before the cycle duration has elapsed.
+     */
+    function test_CannotTriggerPayoutEarly() public {
+        (, AjoCircle circle, address alice, address bob, address carol) = _fullSetup();
 
-        address outsider = makeAddr("outsider");
-        vm.prank(outsider);
-        vm.expectRevert(AjoCircle.NotMember.selector);
-        ajo.contribute(id);
+        _contribute(alice, circle);
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
+
+        // Do NOT warp — cycle has not ended.
+        vm.expectRevert(AjoCircle.CycleNotEnded.selector);
+        circle.triggerPayout();
     }
 
-    function test_Contribute_RevertCircleNotActive() public {
-        uint256 id = _createCircle(alice);
-        vm.prank(bob);
-        ajo.joinCircle(id);
+    /**
+     * @notice An address not in approvedCircles cannot call AjoYieldVault.deposit.
+     */
+    function test_OnlyApprovedCircleCanDepositToVault() public {
+        (MockGDollar token,,) = _deployCore();
+        AjoYieldVault vault = new AjoYieldVault(address(token), address(0));
 
-        vm.prank(alice);
-        vm.expectRevert(AjoCircle.CircleNotActive.selector);
-        ajo.contribute(id);
+        address intruder = makeAddr("intruder");
+        token.mint(intruder, CONTRIBUTION);
+        vm.startPrank(intruder);
+        token.approve(address(vault), CONTRIBUTION);
+        vm.expectRevert(AjoYieldVault.NotApprovedCircle.selector);
+        vault.deposit(CONTRIBUTION);
+        vm.stopPrank();
     }
 
-    // ─── payout & round rotation ──────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Default / slash tests
+    // ═══════════════════════════════════════════════════════════════════════════
 
-    function test_FirstRoundPayoutGoesToFirstMember() public {
-        uint256 id = _createAndStartCircle();
-        // members[0] == alice (creator / first to join)
-        uint256 aliceBefore = token.balanceOf(alice);
+    /**
+     * @notice A member who misses their contribution has their collateral zeroed.
+     *         Verifies CollateralSlashed event and collateral mapping reset.
+     */
+    function test_CollateralSlashedOnDefault() public {
+        (, AjoCircle circle,,, address carol) = _setupOneDefaulter();
 
-        _contributeAll(id);
+        uint256 carolCollateral = _collateral(CONTRIBUTION);
+        assertGt(circle.collateral(carol), 0, "carol should have collateral before payout");
 
-        // Alice should have received payout minus her own contribution
-        uint256 expected = aliceBefore - CONTRIBUTION + (CONTRIBUTION * 3);
-        assertEq(token.balanceOf(alice), expected);
+        vm.expectEmit(true, false, false, true);
+        emit CollateralSlashed(carol, carolCollateral);
+        circle.triggerPayout();
+
+        assertEq(circle.collateral(carol), 0, "carol collateral must be zeroed after slash");
     }
 
-    function test_RoundsRotateThroughAllMembers() public {
-        uint256 id = _createAndStartCircle();
+    /**
+     * @notice After slashing, the defaulter's isMember flag is cleared.
+     */
+    function test_DefaulterRemoved() public {
+        (, AjoCircle circle,, , address carol) = _setupOneDefaulter();
 
-        uint256 aliceBefore = token.balanceOf(alice);
-        uint256 bobBefore = token.balanceOf(bob);
-        uint256 carolBefore = token.balanceOf(carol);
-
-        // Round 0 → alice receives
-        _contributeAll(id);
-        // Round 1 → bob receives
-        _contributeAll(id);
-        // Round 2 → carol receives
-        _contributeAll(id);
-
-        uint256 payout = CONTRIBUTION * 3;
-        // Each member paid 3 × CONTRIBUTION and received payout once
-        assertEq(token.balanceOf(alice), aliceBefore - CONTRIBUTION * 3 + payout);
-        assertEq(token.balanceOf(bob), bobBefore - CONTRIBUTION * 3 + payout);
-        assertEq(token.balanceOf(carol), carolBefore - CONTRIBUTION * 3 + payout);
-    }
-
-    function test_CircleCompletedAfterAllRounds() public {
-        uint256 id = _createAndStartCircle();
-
-        _contributeAll(id); // round 0
-        _contributeAll(id); // round 1
-
-        // Round 2: set expectation right before the single call that fires CircleCompleted
-        vm.prank(alice);
-        ajo.contribute(id);
-        vm.prank(bob);
-        ajo.contribute(id);
+        assertTrue(circle.isMember(carol), "carol is a member before payout");
 
         vm.expectEmit(true, false, false, false);
-        emit CircleCompleted(id);
-        vm.prank(carol);
-        ajo.contribute(id);
+        emit MemberRemoved(carol);
+        circle.triggerPayout();
 
-        assertEq(uint8(ajo.getCircle(id).status), uint8(AjoCircle.Status.Completed));
+        assertFalse(circle.isMember(carol), "carol should no longer be a member");
+        assertEq(circle.activeMemberCount(), 2, "active count should drop to 2");
     }
 
-    function test_ContributeRevertsAfterCircleComplete() public {
-        uint256 id = _createAndStartCircle();
-        _contributeAll(id);
-        _contributeAll(id);
-        _contributeAll(id);
+    /**
+     * @notice Slashed collateral is distributed pro-rata to the two compliant members.
+     *         alice = payout recipient, so she gains pot + slash share.
+     *         bob is compliant but not recipient, so he gains only slash share.
+     */
+    function test_SlashDistributed() public {
+        (MockGDollar token, AjoCircle circle, address alice, address bob, address carol) =
+            _setupOneDefaulter();
 
-        vm.prank(alice);
-        vm.expectRevert(AjoCircle.CircleNotActive.selector);
-        ajo.contribute(id);
-    }
-
-    // ─── distributeRound fallback ─────────────────────────────────────────────
-
-    function test_ManualDistributeRoundWorks() public {
-        uint256 id = _createAndStartCircle();
         uint256 aliceBefore = token.balanceOf(alice);
+        uint256 bobBefore   = token.balanceOf(bob);
 
-        vm.prank(alice);
-        ajo.contribute(id);
-        vm.prank(bob);
-        ajo.contribute(id);
-        vm.prank(carol);
-        ajo.contribute(id);
+        circle.triggerPayout();
 
-        // Auto-distributed in the last contribute call; round should have advanced
-        assertEq(ajo.getCircle(id).currentRound, 1);
-        assertGt(token.balanceOf(alice), aliceBefore);
+        uint256 carolCollateral = _collateral(CONTRIBUTION);
+        uint256 slashShare      = carolCollateral / 2; // 2 compliant members
+        uint256 pot             = CONTRIBUTION * 2;    // only alice and bob contributed
+
+        assertEq(
+            token.balanceOf(alice) - aliceBefore,
+            pot + slashShare,
+            "alice gets pot (recipient) + slash share"
+        );
+        assertEq(
+            token.balanceOf(bob) - bobBefore,
+            slashShare,
+            "bob gets slash share only"
+        );
+
+        // carol's collateral: verify via the collateral mapping
+        assertEq(circle.collateral(carol), 0, "carol collateral should be gone");
     }
 
-    function test_ManualDistribute_RevertRoundNotComplete() public {
-        uint256 id = _createAndStartCircle();
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Edge-case tests
+    // ═══════════════════════════════════════════════════════════════════════════
 
-        vm.prank(alice);
-        ajo.contribute(id);
+    /**
+     * @notice With one defaulter, the payout still executes correctly:
+     *         pot = 2 × CONTRIBUTION (only compliant contributions), carol removed.
+     */
+    function test_CircleWithOneDefaulter() public {
+        (MockGDollar token, AjoCircle circle, address alice,, address carol) =
+            _setupOneDefaulter();
 
-        vm.expectRevert(AjoCircle.RoundNotComplete.selector);
-        ajo.distributeRound(id);
+        uint256 aliceBefore = token.balanceOf(alice);
+        circle.triggerPayout();
+
+        uint256 carolCollateral = _collateral(CONTRIBUTION);
+        uint256 slashShare = carolCollateral / 2;
+        uint256 pot        = CONTRIBUTION * 2; // alice + bob contributed
+
+        assertEq(
+            token.balanceOf(alice) - aliceBefore,
+            pot + slashShare,
+            "payout proceeds despite defaulter"
+        );
+        assertFalse(circle.isMember(carol), "defaulter removed from circle");
+        assertEq(circle.currentCycle(), 1, "cycle should still advance");
     }
 
-    // ─── hasContributed & currentRecipient ────────────────────────────────────
+    /**
+     * @notice A circle that never fills (cycleStartTime == 0) reverts on triggerPayout.
+     */
+    function test_EmptyCircleNeverPays() public {
+        (MockGDollar token, MockIdentity identity, AjoFactory factory) = _deployCore();
+        AjoCircle circle = _newCircle(factory, address(token), address(identity), CONTRIBUTION);
 
-    function test_HasContributed_TracksCorrectly() public {
-        uint256 id = _createAndStartCircle();
-        assertFalse(ajo.hasContributed(id, 0, alice));
+        // Only alice joins — circle is not full, cycleStartTime stays 0.
+        address alice = makeAddr("alice");
+        _prepareAndJoin(alice, token, identity, circle, CONTRIBUTION * 6);
 
-        vm.prank(alice);
-        ajo.contribute(id);
-        assertTrue(ajo.hasContributed(id, 0, alice));
-        assertFalse(ajo.hasContributed(id, 0, bob));
+        assertEq(circle.cycleStartTime(), 0, "cycle should not have started");
+
+        vm.expectRevert(AjoCircle.CircleNotStarted.selector);
+        circle.triggerPayout();
     }
 
-    function test_CurrentRecipient_ReturnsZeroWhenNotActive() public {
-        uint256 id = _createCircle(alice);
-        assertEq(ajo.currentRecipient(id), address(0));
-    }
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Fuzz test
+    // ═══════════════════════════════════════════════════════════════════════════
 
-    function test_CurrentRecipient_RotatesEachRound() public {
-        uint256 id = _createAndStartCircle();
-        address[] memory members = ajo.getCircle(id).members;
+    /**
+     * @notice For any valid contribution amount, the payout equals 3× that amount
+     *         when all members contribute and no slashing occurs.
+     */
+    function testFuzz_ContributionAmount(uint256 amount) public {
+        amount = bound(amount, 1e18, 1000e18);
 
-        assertEq(ajo.currentRecipient(id), members[0]);
-        _contributeAll(id);
-        assertEq(ajo.currentRecipient(id), members[1]);
-        _contributeAll(id);
-        assertEq(ajo.currentRecipient(id), members[2]);
-    }
+        (MockGDollar token, MockIdentity identity, AjoFactory factory) = _deployCore();
+        AjoCircle circle = _newCircle(factory, address(token), address(identity), amount);
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+        address alice = makeAddr("alice_fuzz");
+        address bob   = makeAddr("bob_fuzz");
+        address carol = makeAddr("carol_fuzz");
 
-    function _createCircle(address creator) internal returns (uint256 id) {
-        vm.prank(creator);
-        id = ajo.createCircle(address(token), CONTRIBUTION, MAX_MEMBERS, ROUND_DURATION);
-    }
+        uint256 each = amount * 6; // generous mint: covers collateral + multiple cycles
+        _prepareAndJoin(alice, token, identity, circle, each);
+        _prepareAndJoin(bob,   token, identity, circle, each);
+        _prepareAndJoin(carol, token, identity, circle, each);
 
-    function _createAndStartCircle() internal returns (uint256 id) {
-        id = _createCircle(alice);
+        _contribute(alice, circle);
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
 
-        vm.prank(bob);
-        ajo.joinCircle(id);
-        vm.prank(carol);
-        ajo.joinCircle(id);
+        vm.warp(block.timestamp + CYCLE + 1);
 
-        vm.prank(alice);
-        ajo.startCircle(id);
-    }
+        uint256 aliceBefore = token.balanceOf(alice);
+        circle.triggerPayout();
 
-    function _contributeAll(uint256 id) internal {
-        vm.prank(alice);
-        ajo.contribute(id);
-        vm.prank(bob);
-        ajo.contribute(id);
-        vm.prank(carol);
-        ajo.contribute(id);
+        assertEq(
+            token.balanceOf(alice) - aliceBefore,
+            amount * MAX_MEMBERS,
+            "fuzz: payout must equal 3x contribution"
+        );
     }
 }
