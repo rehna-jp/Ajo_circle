@@ -1,0 +1,9 @@
+{
+  "AjoFactory": "0xc47428FE8321D69967c8013Ead912F6710C1D903",
+  "AjoYieldVault": "0x5d872B5fe7334577d15Acbd7E62Dd954930eC85D",
+  "chainId": 11142220,
+  "deployedAt": "1780636653",
+  "gDollar": "0x23195578a5826C146Dc46Db495d2aC4c1A212d2a",
+  "mockToken": true,
+  "network": "sepolia"
+}

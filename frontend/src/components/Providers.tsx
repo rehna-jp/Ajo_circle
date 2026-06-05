@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { PrivyProvider } from '@privy-io/react-auth'
 import { WagmiProvider } from '@privy-io/wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { celoAlfajores } from 'viem/chains'
+import { celoSepolia } from 'viem/chains'
 import { wagmiConfig } from '@/lib/wagmi'
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -23,8 +23,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         embeddedWallets: {
           createOnLogin: 'users-without-wallets',
         },
-        defaultChain: celoAlfajores,
-        supportedChains: [celoAlfajores],
+        defaultChain: celoSepolia,
+        supportedChains: [celoSepolia],
       }}
     >
       <QueryClientProvider client={queryClient}>

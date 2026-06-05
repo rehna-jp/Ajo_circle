@@ -11,16 +11,17 @@ remappings     = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "forge-std/=lib/forge-std/src/",
 ]
+fs_permissions = [{ access = "read-write", path = "./" }]
 
 [profile.default.fuzz]
 runs = 256
 
 [rpc_endpoints]
-celo_alfajores = "https://alfajores-forno.celo-testnet.org"
+celo_sepolia = "https://forno.celo-sepolia.celo-testnet.org"
 celo_mainnet   = "https://forno.celo.org"
 
 [etherscan]
-celo_alfajores = { key = "${CELOSCAN_API_KEY}", url = "https://api-alfajores.celoscan.io/api" }
+celo_sepolia = { key = "any", url = "https://celo-sepolia.blockscout.com/api/" }
 celo_mainnet   = { key = "${CELOSCAN_API_KEY}", url = "https://api.celoscan.io/api" }
 
 [fmt]

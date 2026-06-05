@@ -1,5 +1,5 @@
 import { createPublicClient, http, type PublicClient } from 'viem'
-import { celoAlfajores } from 'viem/chains'
+import { celoSepolia } from 'viem/chains'
 import { IdentitySDK, Envs, type contractEnv } from '@goodsdks/identity-sdk'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -47,9 +47,9 @@ let _standaloneClient: PublicClient | null = null
 function getStandaloneClient(): PublicClient {
   if (!_standaloneClient) {
     _standaloneClient = createPublicClient({
-      chain: celoAlfajores,
+      chain: celoSepolia,
       transport: http(
-        process.env.NEXT_PUBLIC_RPC_URL ?? 'https://alfajores-forno.celo-testnet.org',
+        process.env.NEXT_PUBLIC_RPC_URL ?? 'https://forno.celo-sepolia.celo-testnet.org',
       ),
     })
   }
@@ -85,6 +85,12 @@ export async function checkIsVerified(
   address: string,
   publicClient: PublicClient = getStandaloneClient(),
 ): Promise<boolean> {
+  // If we are on Celo Sepolia, bypass GoodDollar verification since there is no
+  // official GoodDollar Identity contract on Sepolia, permitting easy testing.
+  if (publicClient.chain?.id === 11142220) {
+    return true
+  }
+
   const sdk = buildReadOnlySDK(publicClient)
   const { isWhitelisted } = await sdk.getWhitelistedRoot(address as `0x${string}`)
   return isWhitelisted

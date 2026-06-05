@@ -21,6 +21,7 @@ contract AjoYieldVaultTest is Test {
     // Test contract is the Ownable owner (deploys vault in setUp without pranking).
     address internal circle = makeAddr("circle");
     address internal alice = makeAddr("alice");
+    address internal factory = makeAddr("factory");
 
     uint256 internal constant DEPOSIT = 1_000e18;
     uint256 internal constant YIELD = 50e18;
@@ -28,11 +29,12 @@ contract AjoYieldVaultTest is Test {
     // Mirror vault events for vm.expectEmit.
     event Deposited(address indexed circle, uint256 amount);
     event Withdrawn(address indexed circle, uint256 amount, uint256 yield);
+    event CircleRevoked(address indexed circle);
 
     function setUp() public {
         token = new MockGDollar();
         // No router — demo mode (hold G$ in vault).
-        vault = new AjoYieldVault(address(token), address(0));
+        vault = new AjoYieldVault(address(token), address(0), factory);
 
         token.mint(circle, 10_000e18);
 
@@ -154,11 +156,88 @@ contract AjoYieldVaultTest is Test {
     // ─── test_ApproveCircle_OnlyOwner ─────────────────────────────────────────
 
     /**
-     * @notice Non-owner cannot whitelist circles.
+     * @notice Non-owner/non-factory cannot whitelist circles.
      */
     function test_ApproveCircle_OnlyOwner() public {
         vm.prank(alice);
-        vm.expectRevert(); // OwnableUnauthorizedAccount from OZ Ownable
+        vm.expectRevert(AjoYieldVault.Unauthorized.selector);
         vault.approveCircle(circle);
+    }
+
+    /**
+     * @notice Factory is authorized to whitelist circles.
+     */
+    function test_ApproveCircle_ByFactory() public {
+        vm.prank(factory);
+        vault.approveCircle(circle);
+        assertTrue(vault.approvedCircles(circle), "circle should be approved by factory");
+    }
+
+    /**
+     * @notice Owner can update the factory address and new factory can approve.
+     */
+    function test_SetFactory() public {
+        address newFactory = makeAddr("newFactory");
+        vault.setFactory(newFactory);
+        assertEq(vault.factory(), newFactory, "factory address should be updated");
+
+        vm.prank(newFactory);
+        vault.approveCircle(circle);
+        assertTrue(vault.approvedCircles(circle), "circle should be approved by new factory");
+    }
+
+    // ─── test_CannotApproveSecondCircleWhileActive ─────────────────────────────
+
+    /**
+     * @notice Reverts if owner attempts to approve a second circle while the active
+     *         circle has active deposits.
+     */
+    function test_CannotApproveSecondCircleWhileActive() public {
+        vault.approveCircle(circle);
+
+        vm.prank(circle);
+        vault.deposit(DEPOSIT);
+
+        address secondCircle = makeAddr("secondCircle");
+        vm.expectRevert(AjoYieldVault.VaultInUse.selector);
+        vault.approveCircle(secondCircle);
+    }
+
+    // ─── test_RevokeCircle ────────────────────────────────────────────────────
+
+    /**
+     * @notice Owner can revoke a circle only if it does not have active deposits.
+     *         Once revoked, the circle can no longer deposit or withdraw.
+     */
+    function test_RevokeCircle() public {
+        vault.approveCircle(circle);
+
+        // Revoke should succeed when there are no deposits
+        vm.expectEmit(true, false, false, false);
+        emit CircleRevoked(circle);
+        vault.revokeCircle(circle);
+
+        assertFalse(vault.approvedCircles(circle), "circle should be unapproved");
+        assertEq(vault.activeCircle(), address(0), "activeCircle should be reset");
+
+        // Approved circle again, deposit, try to revoke while active
+        vault.approveCircle(circle);
+        vm.prank(circle);
+        vault.deposit(DEPOSIT);
+
+        vm.expectRevert(AjoYieldVault.CircleHasDeposits.selector);
+        vault.revokeCircle(circle);
+
+        // After withdrawing, revoke should work
+        vm.prank(circle);
+        vault.withdrawAll();
+        vault.revokeCircle(circle);
+        assertFalse(vault.approvedCircles(circle), "circle should be unapproved after withdraw");
+
+        // Revoked circle trying to deposit should revert
+        token.mint(circle, DEPOSIT);
+        vm.prank(circle);
+        vm.expectRevert(AjoYieldVault.NotApprovedCircle.selector);
+        vault.deposit(DEPOSIT);
     }
 }

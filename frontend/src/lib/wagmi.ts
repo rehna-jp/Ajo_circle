@@ -1,11 +1,11 @@
 import { createConfig, http } from '@privy-io/wagmi'
-import { celoAlfajores } from 'viem/chains'
+import { celoSepolia } from 'viem/chains'
 
 export const wagmiConfig = createConfig({
-  chains: [celoAlfajores],
+  chains: [celoSepolia],
   transports: {
-    [celoAlfajores.id]: http(
-      process.env.NEXT_PUBLIC_RPC_URL ?? 'https://alfajores-forno.celo-testnet.org',
+    [celoSepolia.id]: http(
+      process.env.NEXT_PUBLIC_RPC_URL ?? 'https://forno.celo-sepolia.celo-testnet.org',
     ),
   },
 })

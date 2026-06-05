@@ -121,9 +121,9 @@ export default function Home() {
           rel="noopener noreferrer"
           className="font-medium text-celo-green hover:underline"
         >
-          Celo Alfajores
+          Celo Sepolia
         </a>{' '}
-        · Powered by G$ (GoodDollar) · Chain ID 44787
+        · Powered by G$ (GoodDollar) · Chain ID 11142220
       </footer>
 
       {/* ── Modal ────────────────────────────────────────────────────────── */}

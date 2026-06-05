@@ -1,6 +1,6 @@
 # Ajo Circle
 
-A decentralised rotating savings circle (ROSCA) built on **Celo Alfajores**, denominated in **G$ (GoodDollar)** tokens. Members pool contributions each round; the full pot rotates to one member per round until every member has received a payout.
+A decentralised rotating savings circle (ROSCA) built on **Celo Sepolia**, denominated in **G$ (GoodDollar)** tokens. Members pool contributions each round; the full pot rotates to one member per round until every member has received a payout.
 
 ---
 
@@ -12,7 +12,7 @@ A decentralised rotating savings circle (ROSCA) built on **Celo Alfajores**, den
 | Frontend | [Next.js 14](https://nextjs.org/) (App Router) · TypeScript · Tailwind CSS |
 | Wallet auth | [Privy](https://privy.io/) (email + embedded wallet fallback) |
 | Chain interaction | [wagmi v2](https://wagmi.sh/) · [viem v2](https://viem.sh/) |
-| Chain | Celo Alfajores testnet (chainId **44787**) |
+| Chain | Celo Sepolia testnet (chainId **11142220**) |
 
 ---
 
@@ -106,7 +106,7 @@ npm run type-check
 npm run lint
 ```
 
-### 4. Deploy contracts (Alfajores)
+### 4. Deploy contracts (Sepolia)
 
 ```bash
 # Export your deployer private key (never commit this)
@@ -115,7 +115,7 @@ export PRIVATE_KEY=0x...
 # Optional: Celoscan API key for contract verification
 export CELOSCAN_API_KEY=...
 
-npm run deploy:alfajores
+npm run deploy:sepolia
 ```
 
 Copy the printed contract address into `frontend/.env.local`.

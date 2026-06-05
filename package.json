@@ -15,7 +15,7 @@
     "forge:build": "cd contracts && forge build",
     "forge:fmt": "cd contracts && forge fmt",
     "forge:snapshot": "cd contracts && forge snapshot",
-    "deploy:alfajores": "cd contracts && forge script script/Deploy.s.sol --rpc-url celo_alfajores --broadcast --verify"
+    "deploy:sepolia": "cd contracts && set -a && . ./.env && set +a && forge script script/Deploy.s.sol:DeployAjo --rpc-url celo_sepolia --broadcast --verify"
   },
   "engines": {
     "node": ">=20"

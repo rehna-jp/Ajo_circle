@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import {Test, console} from "forge-std/Test.sol";
 import {AjoFactory} from "../src/AjoFactory.sol";
 import {AjoCircle} from "../src/AjoCircle.sol";
+import {AjoYieldVault} from "../src/AjoYieldVault.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @dev Minimal mintable token — reuses the same helper as AjoCircle.t.sol.
@@ -137,5 +138,29 @@ contract AjoFactoryTest is Test {
         assertEq(factory.getUserCircles(alice)[0], c1);
         assertEq(factory.getUserCircles(bob)[0], c2);
         assertEq(factory.getUserCircles(carol)[0], c3);
+    }
+
+    // ─── test_CreateCircle_WithAutomaticVaultApproval ─────────────────────────
+
+    /**
+     * @notice Verify that when createCircle is called with a configured yieldVault,
+     *         the deployed circle is automatically approved in that vault.
+     */
+    function test_CreateCircle_WithAutomaticVaultApproval() public {
+        AjoYieldVault vault = new AjoYieldVault(address(token), address(0), address(factory));
+
+        vm.prank(alice);
+        address circle = factory.createCircle(
+            "Ajo Vault",
+            CONTRIBUTION,
+            MAX_MEMBERS,
+            CYCLE,
+            address(token),
+            address(vault),
+            address(0)
+        );
+
+        assertTrue(vault.approvedCircles(circle), "circle should be automatically approved in the vault");
+        assertEq(vault.activeCircle(), circle, "circle should be set as activeCircle in the vault");
     }
 }

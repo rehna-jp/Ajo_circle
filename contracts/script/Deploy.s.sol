@@ -85,7 +85,7 @@ contract DeployAjo is Script {
     // ── Output paths ──────────────────────────────────────────────────────────
 
     string private constant DEPLOYMENTS_DIR  = "deployments";
-    string private constant DEPLOYMENTS_FILE = "deployments/alfajores.json";
+    string private constant DEPLOYMENTS_FILE = "deployments/sepolia.json";
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -125,11 +125,11 @@ contract DeployAjo is Script {
             console.log("MockGDollar deployed :", gdollarToken);
         }
 
-        // 1. AjoYieldVault — deployer becomes Ownable owner.
-        vault = new AjoYieldVault(gdollarToken, UBESWAP_ROUTER);
-
-        // 2. AjoFactory — stateless registry; no owner.
+        // 1. AjoFactory — stateless registry; no owner.
         factory = new AjoFactory();
+
+        // 2. AjoYieldVault — deployer becomes Ownable owner.
+        vault = new AjoYieldVault(gdollarToken, UBESWAP_ROUTER, address(factory));
 
         vm.stopBroadcast();
 
@@ -144,7 +144,7 @@ contract DeployAjo is Script {
 
     function _logHeader(address deployer, address gdollar, bool mock) private view {
         console.log("=============================================");
-        console.log("  Ajo Deployment  -  Celo Alfajores");
+        console.log("  Ajo Deployment  -  Celo Sepolia");
         console.log("=============================================");
         console.log("Deployer      :", deployer);
         console.log("Chain ID      :", block.chainid);
@@ -185,8 +185,8 @@ contract DeployAjo is Script {
         vm.createDir(DEPLOYMENTS_DIR, /* recursive */ true);
 
         string memory obj = "ajo";
-        vm.serializeString( obj, "network",      "alfajores");
-        vm.serializeUint(   obj, "chainId",      44787);
+        vm.serializeString( obj, "network",      "sepolia");
+        vm.serializeUint(   obj, "chainId",      11142220);
         vm.serializeAddress(obj, "AjoYieldVault", vault);
         vm.serializeAddress(obj, "AjoFactory",    factory);
         vm.serializeAddress(obj, "gDollar",       gdollar);
@@ -200,11 +200,11 @@ contract DeployAjo is Script {
 
     /**
      * @notice Print manual forge verify-contract commands for each deployed
-     *         contract. These match the [etherscan.celo_alfajores] entry in
+     *         contract. These match the [etherscan.celo_sepolia] entry in
      *         foundry.toml and can be copy-pasted if --verify fails due to a
      *         Celoscan indexing delay.
      *
-     *         AjoYieldVault constructor args: (address _gDollarToken, address _ubeswapRouter)
+     *         AjoYieldVault constructor args: (address _gDollarToken, address _ubeswapRouter, address _factory)
      *         AjoFactory constructor args:    none
      *         MockGDollar constructor args:   none  (if deployed)
      */
@@ -214,11 +214,11 @@ contract DeployAjo is Script {
         address gdollar,
         bool mockDeployed
     ) private pure {
-        string memory api = "https://api-alfajores.celoscan.io/api";
+        string memory api = "https://api-sepolia.celoscan.io/api";
         string memory tail = string.concat(
             " --verifier-url ", api,
             " --etherscan-api-key $CELOSCAN_API_KEY",
-            " --chain-id 44787"
+            " --chain-id 11142220"
         );
 
         console.log("");
@@ -246,9 +246,10 @@ contract DeployAjo is Script {
                 "forge verify-contract ", vm.toString(vault),
                 " src/AjoYieldVault.sol:AjoYieldVault \\",
                 "\n  --constructor-args $(cast abi-encode",
-                " \"constructor(address,address)\" ",
+                " \"constructor(address,address,address)\" ",
                 vm.toString(gdollar), " ",
-                vm.toString(UBESWAP_ROUTER), ")",
+                vm.toString(UBESWAP_ROUTER), " ",
+                vm.toString(address(factory)), ")",
                 tail
             )
         );

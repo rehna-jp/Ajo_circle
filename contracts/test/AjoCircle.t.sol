@@ -39,6 +39,7 @@ contract AjoCircleTest is Test {
     uint256 constant CYCLE        = 7 days;
     uint256 constant MAX_MEMBERS  = 3;
     uint256 constant YIELD_AMOUNT = 30e18;
+    uint256 constant GRACE        = 1 hours;
 
     // ── Re-declared events for vm.expectEmit ─────────────────────────────────
 
@@ -166,7 +167,7 @@ contract AjoCircleTest is Test {
         _contribute(alice, circle);
         _contribute(bob,   circle);
         // carol intentionally skips her contribution
-        vm.warp(block.timestamp + CYCLE + 1);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -185,7 +186,7 @@ contract AjoCircleTest is Test {
         _contribute(bob,   circle);
         _contribute(carol, circle);
 
-        vm.warp(block.timestamp + CYCLE + 1);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
 
         uint256 pot = CONTRIBUTION * MAX_MEMBERS;
         uint256 aliceBefore = token.balanceOf(alice);
@@ -210,7 +211,7 @@ contract AjoCircleTest is Test {
         _contribute(alice, circle);
         _contribute(bob,   circle);
         _contribute(carol, circle);
-        vm.warp(block.timestamp + CYCLE + 1);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
 
         uint256 pot = CONTRIBUTION * MAX_MEMBERS;
         uint256 snap = token.balanceOf(alice);
@@ -221,7 +222,7 @@ contract AjoCircleTest is Test {
         _contribute(alice, circle);
         _contribute(bob,   circle);
         _contribute(carol, circle);
-        vm.warp(block.timestamp + CYCLE + 1);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
 
         snap = token.balanceOf(bob);
         circle.triggerPayout();
@@ -231,7 +232,7 @@ contract AjoCircleTest is Test {
         _contribute(alice, circle);
         _contribute(bob,   circle);
         _contribute(carol, circle);
-        vm.warp(block.timestamp + CYCLE + 1);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
 
         snap = token.balanceOf(carol);
         circle.triggerPayout();
@@ -250,7 +251,7 @@ contract AjoCircleTest is Test {
      */
     function test_YieldIncludedInPayout() public {
         (MockGDollar token, MockIdentity identity, AjoFactory factory) = _deployCore();
-        AjoYieldVault vault = new AjoYieldVault(address(token), address(0));
+        AjoYieldVault vault = new AjoYieldVault(address(token), address(0), address(factory));
         AjoCircle circle = _newCircleWithVault(factory, address(token), address(identity), vault, CONTRIBUTION);
 
         address alice = makeAddr("alice");
@@ -269,7 +270,7 @@ contract AjoCircleTest is Test {
         // Simulate yield: owner sends extra G$ directly to the vault.
         token.mint(address(vault), YIELD_AMOUNT);
 
-        vm.warp(block.timestamp + CYCLE + 1);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
 
         uint256 aliceBefore = token.balanceOf(alice);
 
@@ -362,7 +363,7 @@ contract AjoCircleTest is Test {
      */
     function test_OnlyApprovedCircleCanDepositToVault() public {
         (MockGDollar token,,) = _deployCore();
-        AjoYieldVault vault = new AjoYieldVault(address(token), address(0));
+        AjoYieldVault vault = new AjoYieldVault(address(token), address(0), address(0));
 
         address intruder = makeAddr("intruder");
         token.mint(intruder, CONTRIBUTION);
@@ -515,7 +516,7 @@ contract AjoCircleTest is Test {
         _contribute(bob,   circle);
         _contribute(carol, circle);
 
-        vm.warp(block.timestamp + CYCLE + 1);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
 
         uint256 aliceBefore = token.balanceOf(alice);
         circle.triggerPayout();
@@ -525,5 +526,121 @@ contract AjoCircleTest is Test {
             amount * MAX_MEMBERS,
             "fuzz: payout must equal 3x contribution"
         );
+    }
+
+    /**
+     * @notice A defaulting member who was next in line for payout gets slashed first,
+     *         and the payout is rotated to the next active member.
+     */
+    function test_DefaulterCannotReceivePayout() public {
+        (MockGDollar token, AjoCircle circle, address alice, address bob, address carol) =
+            _fullSetup();
+
+        // Alice (index 0, next in line) defaults.
+        // Bob and Carol contribute.
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
+
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
+
+        uint256 bobBefore = token.balanceOf(bob);
+        uint256 carolBefore = token.balanceOf(carol);
+
+        // Expect Bob to receive payout since Alice defaulted and was slashed.
+        circle.triggerPayout();
+
+        uint256 slashShare = _collateral(CONTRIBUTION) / 2; // alice slashed, split between bob and carol
+        uint256 pot = CONTRIBUTION * 2; // only bob and carol contributed
+
+        assertEq(token.balanceOf(bob) - bobBefore, pot + slashShare, "bob gets pot + slash share");
+        assertEq(token.balanceOf(carol) - carolBefore, slashShare, "carol gets slash share");
+        assertFalse(circle.isMember(alice), "alice is no longer member");
+        assertTrue(circle.hasReceivedPayout(bob), "bob marked as paid");
+    }
+
+    /**
+     * @notice If 1 of 3 members defaults, the circle finishes completely in 2 payouts.
+     */
+    function test_CircleCompletesAfterSlashing() public {
+        (, AjoCircle circle, address alice, address bob, address carol) =
+            _fullSetup();
+
+        // ── Cycle 0: Alice defaults, Bob/Carol contribute ───────────────────
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
+        circle.triggerPayout(); // Bob gets paid, Alice deactivated
+
+        // ── Cycle 1: Bob/Carol contribute ───────────────────
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
+        circle.triggerPayout(); // Carol gets paid
+
+        // Now both active members (Bob, Carol) have received a payout.
+        // No payouts should be remaining.
+        assertFalse(circle.hasReceivedPayout(alice), "alice not paid");
+        assertTrue(circle.hasReceivedPayout(bob), "bob paid");
+        assertTrue(circle.hasReceivedPayout(carol), "carol paid");
+
+        // triggerPayout should revert with NoPayoutsRemaining
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
+        vm.expectRevert(AjoCircle.NoPayoutsRemaining.selector);
+        circle.triggerPayout();
+    }
+
+    /**
+     * @notice After the circle completes (no pending payouts), any member can trigger
+     *         emergency withdrawal to return remaining collateral to members.
+     */
+    function test_EmergencyWithdrawAfterCompletion() public {
+        (MockGDollar token, AjoCircle circle, address alice, address bob, address carol) =
+            _fullSetup();
+
+        // Run full normal flow for 3 cycles (no defaulters)
+        for (uint256 i = 0; i < 3; i++) {
+            _contribute(alice, circle);
+            _contribute(bob,   circle);
+            _contribute(carol, circle);
+            vm.warp(block.timestamp + CYCLE + GRACE + 1);
+            circle.triggerPayout();
+        }
+
+        uint256 aliceBefore = token.balanceOf(alice);
+        uint256 bobBefore = token.balanceOf(bob);
+        uint256 carolBefore = token.balanceOf(carol);
+
+        uint256 colAmount = _collateral(CONTRIBUTION);
+
+        // Emergency withdraw can be called by anyone
+        vm.prank(bob);
+        circle.emergencyWithdraw();
+
+        assertEq(token.balanceOf(alice) - aliceBefore, colAmount, "alice collateral returned");
+        assertEq(token.balanceOf(bob) - bobBefore, colAmount, "bob collateral returned");
+        assertEq(token.balanceOf(carol) - carolBefore, colAmount, "carol collateral returned");
+
+        assertEq(circle.collateral(alice), 0, "alice collateral zeroed");
+        assertEq(circle.collateral(bob), 0, "bob collateral zeroed");
+        assertEq(circle.collateral(carol), 0, "carol collateral zeroed");
+    }
+
+    /**
+     * @notice emergencyWithdraw reverts if the circle is not yet complete.
+     */
+    function test_EmergencyWithdrawRevertsWhileActive() public {
+        (, AjoCircle circle, address alice, address bob, address carol) =
+            _fullSetup();
+
+        // 1 cycle completed, 2 remaining
+        _contribute(alice, circle);
+        _contribute(bob,   circle);
+        _contribute(carol, circle);
+        vm.warp(block.timestamp + CYCLE + GRACE + 1);
+        circle.triggerPayout();
+
+        // Should revert since payouts are still pending
+        vm.expectRevert(AjoCircle.CircleNotComplete.selector);
+        circle.emergencyWithdraw();
     }
 }

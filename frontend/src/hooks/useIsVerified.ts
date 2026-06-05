@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { usePublicClient } from 'wagmi'
-import { celoAlfajores } from 'viem/chains'
+import { celoSepolia } from 'viem/chains'
 import { checkIsVerified } from '@/lib/gooddollar'
 
 export interface UseIsVerifiedResult {
@@ -36,9 +36,9 @@ export function useIsVerified(address: string | undefined): UseIsVerifiedResult 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Explicitly target Alfajores so the correct client is used even if wagmi
+  // Explicitly target Sepolia so the correct client is used even if wagmi
   // is ever extended with additional chains.
-  const publicClient = usePublicClient({ chainId: celoAlfajores.id })
+  const publicClient = usePublicClient({ chainId: celoSepolia.id })
 
   // Guard against setting state on an unmounted component or a stale request
   // when address changes quickly (e.g. wallet switch).

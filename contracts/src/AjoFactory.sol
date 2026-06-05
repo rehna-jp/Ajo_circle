@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import {AjoCircle} from "./AjoCircle.sol";
+import {AjoYieldVault} from "./AjoYieldVault.sol";
 
 /**
  * @title AjoFactory
@@ -76,6 +77,10 @@ contract AjoFactory {
         circleAddress = address(circle);
         allCircles.push(circleAddress);
         userCircles[msg.sender].push(circleAddress);
+
+        if (yieldVault != address(0)) {
+            AjoYieldVault(yieldVault).approveCircle(circleAddress);
+        }
 
         emit CircleCreated(circleAddress, msg.sender, name, contributionAmount, maxMembers);
     }

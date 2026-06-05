@@ -31,6 +31,9 @@ contract AjoCircle is ReentrancyGuard {
     /// @notice Join collateral expressed in basis points. 1000 = 10% of `contributionAmount`.
     uint256 public constant COLLATERAL_BPS = 1000;
 
+    /// @notice Grace period after cycle ends before `triggerPayout` becomes callable.
+    uint256 public constant GRACE_PERIOD = 1 hours;
+
     // ─── Circle metadata ──────────────────────────────────────────────────────
 
     string public name;
@@ -85,6 +88,9 @@ contract AjoCircle is ReentrancyGuard {
     event PayoutSent(address indexed recipient, uint256 indexed cycle, uint256 amount);
     event CollateralSlashed(address indexed member, uint256 amount);
     event MemberRemoved(address indexed member);
+    event CircleStarted(uint256 startTime);
+    event CycleAdvanced(uint256 indexed newCycle, uint256 cycleStartTime);
+    event EmergencyWithdrawal(address indexed member, uint256 amount);
 
     // ─── Errors ──────────────────────────────────────────────────────────────
 
@@ -98,6 +104,7 @@ contract AjoCircle is ReentrancyGuard {
     error NoPayoutsRemaining();
     error NoEligibleRecipient();
     error EmptyPot();
+    error CircleNotComplete();
 
     // ─── Constructor ─────────────────────────────────────────────────────────
 
@@ -168,6 +175,7 @@ contract AjoCircle is ReentrancyGuard {
         // Starting the circle is an effect, so set it before emitting.
         if (activeMemberCount == maxMembers) {
             cycleStartTime = block.timestamp;
+            emit CircleStarted(block.timestamp);
         }
 
         emit MemberJoined(msg.sender, collateralAmount);
@@ -200,16 +208,24 @@ contract AjoCircle is ReentrancyGuard {
     /**
      * @notice End the current cycle: slash non-contributors, collect the pot, and pay
      *         the designated cycle recipient.
-     * @dev    Can be called by anyone once `cycleStartTime + cycleDuration` has elapsed.
-     *         Follows checks-effects-interactions: all state mutations happen before any
-     *         external token transfers. Non-contributors are slashed before the pot is
-     *         withdrawn from the vault; slashed collateral is distributed pro-rata to
-     *         compliant members as a separate transfer pass.
+     * @dev    Can be called by anyone once `cycleStartTime + cycleDuration + GRACE_PERIOD`
+     *         has elapsed. Non-contributors are slashed FIRST so a defaulting member
+     *         cannot be selected as recipient. Uses a dynamic check for remaining payouts
+     *         instead of a hard `maxMembers` cap to avoid deadlock when members are slashed.
      */
     function triggerPayout() external nonReentrant {
         if (cycleStartTime == 0) revert CircleNotStarted();
-        if (block.timestamp < cycleStartTime + cycleDuration) revert CycleNotEnded();
-        if (currentCycle >= maxMembers) revert NoPayoutsRemaining();
+        if (block.timestamp < cycleStartTime + cycleDuration + GRACE_PERIOD) revert CycleNotEnded();
+
+        // Dynamic check: are there any active members who haven't been paid yet?
+        if (!_hasPendingPayouts()) revert NoPayoutsRemaining();
+
+        uint256 cycleJustFinished = currentCycle;
+
+        // ── Slash FIRST ───────────────────────────────────────────────────────
+        // Deactivate non-contributors before selecting recipient, so a defaulter
+        // who is next in line cannot receive the pot.
+        _slashNonContributors(cycleJustFinished);
 
         // Walk the join-order list to find the next active, unpaid member.
         uint256 idx = currentPayoutIndex;
@@ -226,7 +242,6 @@ contract AjoCircle is ReentrancyGuard {
         // ── Effects ───────────────────────────────────────────────────────────
         hasReceivedPayout[recipient] = true;
         currentPayoutIndex = idx + 1;
-        uint256 cycleJustFinished = currentCycle;
         currentCycle++;
         uint256 deposited = _cycleDeposits;
         _cycleDeposits = 0;
@@ -234,10 +249,7 @@ contract AjoCircle is ReentrancyGuard {
 
         // ── Interactions ──────────────────────────────────────────────────────
 
-        // 1. Slash non-contributors and redistribute their collateral to compliant members.
-        _slashNonContributors(cycleJustFinished);
-
-        // 2. Collect the pot: withdraw from vault (principal + yield), or use direct tally.
+        // Collect the pot: withdraw from vault (principal + yield), or use direct tally.
         uint256 pot;
         if (yieldVault != address(0)) {
             pot = IYieldVault(yieldVault).withdrawAll();
@@ -246,9 +258,29 @@ contract AjoCircle is ReentrancyGuard {
         }
         if (pot == 0) revert EmptyPot();
 
-        // 3. Pay the recipient.
+        // Pay the recipient.
         IERC20(gDollarToken).safeTransfer(recipient, pot);
         emit PayoutSent(recipient, cycleJustFinished, pot);
+        emit CycleAdvanced(currentCycle, cycleStartTime);
+    }
+
+    /**
+     * @notice Return remaining collateral to all members after the circle has completed.
+     * @dev    Callable by any member once no active, unpaid members remain.
+     *         Returns collateral individually; any residual contract balance stays.
+     */
+    function emergencyWithdraw() external nonReentrant {
+        if (_hasPendingPayouts()) revert CircleNotComplete();
+
+        for (uint256 i; i < members.length; i++) {
+            address m = members[i];
+            if (collateral[m] > 0) {
+                uint256 amt = collateral[m];
+                collateral[m] = 0;
+                IERC20(gDollarToken).safeTransfer(m, amt);
+                emit EmergencyWithdrawal(m, amt);
+            }
+        }
     }
 
     // ─── View functions ───────────────────────────────────────────────────────
@@ -287,7 +319,7 @@ contract AjoCircle is ReentrancyGuard {
             idx++;
         }
         recipient = idx < members.length ? members[idx] : address(0);
-        cycleEnd = cycleStartTime + cycleDuration;
+        cycleEnd = cycleStartTime + cycleDuration + GRACE_PERIOD;
     }
 
     /**
@@ -302,10 +334,23 @@ contract AjoCircle is ReentrancyGuard {
     // ─── Internal ────────────────────────────────────────────────────────────
 
     /**
+     * @notice Returns true if at least one active member has not yet received a payout.
+     */
+    function _hasPendingPayouts() internal view returns (bool) {
+        for (uint256 i; i < members.length; i++) {
+            if (isMember[members[i]] && !hasReceivedPayout[members[i]]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * @notice Slash every active member who did not contribute in `cycle` and distribute
      *         the seized collateral equally among compliant members.
      * @dev    Two-pass approach: first pass is effects-only (update state, emit events);
      *         second pass is the actual G$ transfer to compliant members.
+     *         Remainder from integer division goes to the last active member.
      * @param cycle The cycle index whose contributions are checked.
      */
     function _slashNonContributors(uint256 cycle) internal {
@@ -328,16 +373,25 @@ contract AjoCircle is ReentrancyGuard {
         }
 
         // Pass 2 — interactions: distribute seized collateral pro-rata to compliant members.
+        // Remainder (dust) from integer division goes to the last active member.
         if (totalSlashed > 0 && activeMemberCount > 0) {
             uint256 share = totalSlashed / activeMemberCount;
-            if (share > 0) {
+            uint256 remainder = totalSlashed % activeMemberCount;
+            if (share > 0 || remainder > 0) {
+                uint256 count;
                 for (uint256 i; i < members.length; i++) {
                     if (isMember[members[i]]) {
-                        IERC20(gDollarToken).safeTransfer(members[i], share);
+                        count++;
+                        uint256 amt = share;
+                        if (count == activeMemberCount) {
+                            amt += remainder; // last active member gets dust
+                        }
+                        if (amt > 0) {
+                            IERC20(gDollarToken).safeTransfer(members[i], amt);
+                        }
                     }
                 }
             }
-            // Dust (totalSlashed % activeMemberCount) stays in the contract.
         }
     }
 }

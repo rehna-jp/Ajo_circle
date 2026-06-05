@@ -28,10 +28,19 @@ contract AjoYieldVault is Ownable, ReentrancyGuard {
     uint256 public totalDeposited;
     mapping(address => bool) public approvedCircles;
 
+    /// @notice The currently active circle. Only one circle may use the vault at a time.
+    address public activeCircle;
+
+    /// @notice The AjoFactory address authorized to automatically approve circles.
+    address public factory;
+
     // ─── Events ──────────────────────────────────────────────────────────────
 
     /// @notice Emitted when an AjoCircle is whitelisted.
     event CircleApproved(address indexed circle);
+
+    /// @notice Emitted when an AjoCircle is revoked.
+    event CircleRevoked(address indexed circle);
 
     /**
      * @notice Emitted when a circle deposits G$ into this vault.
@@ -52,6 +61,9 @@ contract AjoYieldVault is Ownable, ReentrancyGuard {
 
     error NotApprovedCircle();
     error ZeroAddress();
+    error VaultInUse();
+    error CircleHasDeposits();
+    error Unauthorized();
 
     // ─── Modifier ────────────────────────────────────────────────────────────
 
@@ -68,24 +80,59 @@ contract AjoYieldVault is Ownable, ReentrancyGuard {
      * @param _gDollarToken  G$ ERC-20 token address on Celo (non-zero).
      * @param _ubeswapRouter Ubeswap V2 router address; address(0) disables LP provision.
      */
-    constructor(address _gDollarToken, address _ubeswapRouter) Ownable(msg.sender) {
+    constructor(
+        address _gDollarToken,
+        address _ubeswapRouter,
+        address _factory
+    ) Ownable(msg.sender) {
         if (_gDollarToken == address(0)) revert ZeroAddress();
         gDollarToken = _gDollarToken;
         ubeswapRouter = _ubeswapRouter;
+        factory = _factory;
     }
 
-    // ─── Owner functions ─────────────────────────────────────────────────────
+    // ─── Owner/Factory functions ─────────────────────────────────────────────
+
+    /**
+     * @notice Set the factory address allowed to automatically whitelist circles.
+     * @param _factory Address of the AjoFactory contract.
+     */
+    function setFactory(address _factory) external onlyOwner {
+        factory = _factory;
+    }
 
     /**
      * @notice Whitelist an AjoCircle contract so it may call {deposit} and {withdrawAll}.
-     * @dev    In production this would be called by the AjoFactory immediately after
-     *         deploying a new circle, provided the factory holds vault ownership.
+     * @dev    Enforces single-circle-per-vault: reverts if another circle currently has
+     *         deposits. The previous circle must have fully withdrawn first.
+     *         Authorized for both the owner and the configured factory address.
      * @param circle Address of the AjoCircle to approve (non-zero).
      */
-    function approveCircle(address circle) external onlyOwner {
+    function approveCircle(address circle) external {
+        if (msg.sender != owner() && msg.sender != factory) revert Unauthorized();
         if (circle == address(0)) revert ZeroAddress();
+        // Enforce single-circle: only allow if no active circle or active circle has no deposits.
+        if (activeCircle != address(0) && activeCircle != circle && totalDeposited > 0) {
+            revert VaultInUse();
+        }
+        activeCircle = circle;
         approvedCircles[circle] = true;
         emit CircleApproved(circle);
+    }
+
+    /**
+     * @notice Revoke a previously approved circle. Only allowed when that circle has no
+     *         active deposits in the vault.
+     * @param circle Address of the AjoCircle to revoke.
+     */
+    function revokeCircle(address circle) external onlyOwner {
+        if (circle == address(0)) revert ZeroAddress();
+        if (circle == activeCircle && totalDeposited > 0) revert CircleHasDeposits();
+        approvedCircles[circle] = false;
+        if (circle == activeCircle) {
+            activeCircle = address(0);
+        }
+        emit CircleRevoked(circle);
     }
 
     // ─── Circle functions ─────────────────────────────────────────────────────
