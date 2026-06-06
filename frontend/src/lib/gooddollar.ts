@@ -30,7 +30,7 @@ export const GOODDOLLAR_IDENTITY_URL: string = Envs[GOODDOLLAR_ENV].identityUrl
  * inside submitAndWait() and generateFVLink() — neither of which we call for
  * an identity check. Passing null here is intentional and safe for read paths.
  */
-export function buildReadOnlySDK(publicClient: PublicClient): IdentitySDK {
+export function buildReadOnlySDK(publicClient: any): IdentitySDK {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new IdentitySDK(publicClient, null as any, GOODDOLLAR_ENV)
 }
@@ -42,9 +42,9 @@ export function buildReadOnlySDK(publicClient: PublicClient): IdentitySDK {
  * Lazy-initialised so the module can be imported during SSR without side-effects.
  * React components should prefer the wagmi-provided client via useIsVerified.
  */
-let _standaloneClient: PublicClient | null = null
+let _standaloneClient: any = null
 
-function getStandaloneClient(): PublicClient {
+function getStandaloneClient(): any {
   if (!_standaloneClient) {
     _standaloneClient = createPublicClient({
       chain: celoSepolia,
@@ -83,11 +83,11 @@ function getStandaloneClient(): PublicClient {
  */
 export async function checkIsVerified(
   address: string,
-  publicClient: PublicClient = getStandaloneClient(),
+  publicClient: any = getStandaloneClient(),
 ): Promise<boolean> {
   // If we are on Celo Sepolia, bypass GoodDollar verification since there is no
   // official GoodDollar Identity contract on Sepolia, permitting easy testing.
-  if (publicClient.chain?.id === 11142220) {
+  if (publicClient?.chain?.id === 11142220) {
     return true
   }
 

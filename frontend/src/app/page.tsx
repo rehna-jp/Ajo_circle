@@ -1,141 +1,145 @@
 'use client'
 
-import { useState } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
-import { useReadContract } from 'wagmi'
+import { useAccount, useReadContract } from 'wagmi'
+import { formatUnits } from 'viem'
+import Link from 'next/link'
 import { ConnectWallet } from '@/components/ConnectWallet'
-import { CircleCard } from '@/components/CircleCard'
-import { CreateCircleModal } from '@/components/CreateCircleModal'
-import { AJO_CIRCLE_ABI, AJO_FACTORY_ADDRESS } from '@/lib/contracts'
+import { G_DOLLAR_ADDRESS, ERC20_ABI } from '@/lib/contracts'
+import { UserPlus, RefreshCw, CircleDollarSign, ArrowRight } from 'lucide-react'
 
 export default function Home() {
   const { authenticated } = usePrivy()
-  const [showCreate, setShowCreate] = useState(false)
+  const { address } = useAccount()
 
-  const { data: circleCount, refetch } = useReadContract({
-    address: AJO_FACTORY_ADDRESS,
-    abi: AJO_CIRCLE_ABI,
-    functionName: 'circleCount',
+  // Read G$ balance if connected and authenticated
+  const { data: balanceData } = useReadContract({
+    address: G_DOLLAR_ADDRESS,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: { enabled: !!address && authenticated },
   })
 
-  const count = Number(circleCount ?? 0n)
-  const circleIds = Array.from({ length: count }, (_, i) => BigInt(i)).reverse()
+  const gDollarBalance = balanceData !== undefined
+    ? parseFloat(formatUnits(balanceData, 18)).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    : null
 
   return (
-    <>
-      {/* ── Nav ──────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-black tracking-tight text-gray-900">Ajo</span>
-            <span className="rounded-full bg-celo-green px-2 py-0.5 text-xs font-bold text-white">
-              G$
-            </span>
-          </div>
+    <div className="min-h-screen bg-[#fdf7fa] font-sans text-gray-800">
+      {/* ── Navbar ──────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 border-b border-[#e2a3c7]/20 bg-[#fdf7fa]/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <Link href="/" className="flex items-center gap-2 transition hover:opacity-90">
+            <img src="/logo.png" alt="Ajo Logo" className="h-8 w-auto object-contain" />
+          </Link>
           <ConnectWallet />
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 pb-20">
-        {/* ── Hero ─────────────────────────────────────────────────────────── */}
-        <section className="py-16 text-center">
-          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-hero-gradient shadow-lg">
-            <span className="text-4xl">🤝</span>
-          </div>
-          <h1 className="mb-4 text-4xl font-black tracking-tight text-gray-900 sm:text-5xl">
-            Save Together,{' '}
-            <span className="bg-hero-gradient bg-clip-text text-transparent">Win Together</span>
+      {/* ── Hero Section ────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden bg-[#60435f] py-24 text-center text-[#fdf7fa] md:py-32">
+        {/* Subtle decorative background gradient circles */}
+        <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-[#d67ab1]/10 blur-3xl" />
+        <div className="absolute -right-40 -bottom-40 h-80 w-80 rounded-full bg-[#a8dcd9]/10 blur-3xl" />
+
+        <div className="relative z-10 mx-auto max-w-4xl px-6">
+          <span className="mb-4 inline-block rounded-full bg-[#a8dcd9]/25 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#a8dcd9]">
+            The trustless ROSCA protocol on Celo
+          </span>
+
+          <h1 className="mb-6 text-4xl font-extrabold tracking-tight md:text-6xl">
+            Your community savings circle,{' '}
+            <span className="bg-gradient-to-r from-[#d67ab1] to-[#e2a3c7] bg-clip-text text-transparent">
+              on-chain.
+            </span>
           </h1>
-          <p className="mx-auto mb-8 max-w-lg text-lg text-gray-600">
-            Ajo is a decentralised rotating savings circle on Celo. Pool G$ with friends, family,
-            or community — everyone wins, one round at a time.
+
+          <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-[#fdf7fa]/80 md:text-xl">
+            Save together with your community. Auto-contribute from your G$ UBI.
+            Earn yield. No trust required.
           </p>
 
-          {authenticated ? (
-            <button
-              onClick={() => setShowCreate(true)}
-              className="inline-flex items-center gap-2 rounded-full bg-celo-green px-7 py-3 text-base font-bold text-white shadow-md transition hover:opacity-90 active:scale-95"
+          <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <Link
+              href="/create"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#d67ab1] px-8 py-3.5 text-base font-bold text-white shadow-lg transition hover:bg-[#e2a3c7] hover:scale-[1.03] active:scale-95 sm:w-auto"
             >
-              <span>+</span> Create a Circle
-            </button>
-          ) : (
-            <p className="text-sm text-gray-500">Connect your wallet to create or join a circle.</p>
-          )}
-        </section>
-
-        {/* ── How it works ─────────────────────────────────────────────────── */}
-        <section className="mb-16 grid gap-4 sm:grid-cols-3">
-          {[
-            { icon: '➕', title: 'Create', desc: 'Set a G$ amount, member limit, and round duration.' },
-            { icon: '👥', title: 'Join', desc: 'Invite friends and family to fill the seats.' },
-            { icon: '💸', title: 'Receive', desc: 'Every round one member gets the full pot, rotating until all win.' },
-          ].map((step) => (
-            <div
-              key={step.title}
-              className="flex flex-col items-center rounded-2xl border border-gray-100 bg-white p-6 text-center shadow-sm"
+              Create a Circle
+              <ArrowRight className="h-5 w-5" />
+            </Link>
+            <Link
+              href="/join"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full border-2 border-[#fdf7fa] px-8 py-3.5 text-base font-bold text-[#fdf7fa] transition hover:bg-[#fdf7fa] hover:text-[#60435f] hover:scale-[1.03] active:scale-95 sm:w-auto"
             >
-              <span className="mb-3 text-3xl">{step.icon}</span>
-              <h3 className="mb-1 font-bold text-gray-900">{step.title}</h3>
-              <p className="text-sm text-gray-600">{step.desc}</p>
-            </div>
-          ))}
-        </section>
-
-        {/* ── Circles list ─────────────────────────────────────────────────── */}
-        <section>
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900">
-              All Circles{count > 0 ? ` (${count})` : ''}
-            </h2>
-            {authenticated && (
-              <button
-                onClick={() => setShowCreate(true)}
-                className="rounded-full border border-celo-green px-4 py-1.5 text-sm font-semibold text-celo-green transition hover:bg-celo-mist"
-              >
-                + New
-              </button>
-            )}
+              Join a Circle
+            </Link>
           </div>
 
-          {count === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-gray-200 py-20 text-center">
-              <span className="text-4xl">🌱</span>
-              <p className="font-medium text-gray-500">No circles yet. Be the first to start one!</p>
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {circleIds.map((id) => (
-                <CircleCard key={id.toString()} circleId={id} />
-              ))}
+          {authenticated && address && gDollarBalance !== null && (
+            <div className="mt-10 inline-flex items-center gap-2 rounded-full bg-[#fdf7fa]/10 px-5 py-2 text-sm font-semibold text-[#fdf7fa] backdrop-blur-sm">
+              <span className="h-2 w-2 rounded-full bg-[#a8dcd9] animate-pulse" />
+              <span>Balance: <span className="font-mono">{gDollarBalance}</span> G$</span>
             </div>
           )}
-        </section>
-      </main>
+        </div>
+      </section>
 
-      {/* ── Footer ───────────────────────────────────────────────────────── */}
-      <footer className="border-t border-gray-100 py-6 text-center text-xs text-gray-400">
-        Built on{' '}
-        <a
-          href="https://celo.org"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-medium text-celo-green hover:underline"
-        >
-          Celo Sepolia
-        </a>{' '}
-        · Powered by G$ (GoodDollar) · Chain ID 11142220
+      {/* ── How it works Section ────────────────────────────────────────── */}
+      <section className="bg-[#fdf7fa] py-20 md:py-28">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="mb-16 text-center">
+            <h2 className="mb-4 text-3xl font-extrabold text-[#60435f] md:text-4xl">
+              How Ajo Works
+            </h2>
+            <div className="mx-auto h-1 w-12 rounded bg-[#d67ab1]" />
+          </div>
+
+          <div className="grid gap-8 sm:grid-cols-3">
+            {/* Card 1 */}
+            <div className="group rounded-2xl border border-[#e2a3c7]/20 bg-white p-8 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-md">
+              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#fdf7fa] text-[#d67ab1] group-hover:bg-[#d67ab1] group-hover:text-white transition-colors duration-300">
+                <UserPlus className="h-7 w-7" />
+              </div>
+              <h3 className="mb-3 text-xl font-bold text-[#60435f]">Join a Circle</h3>
+              <p className="text-sm leading-relaxed text-gray-600">
+                Set your contribution, lock collateral, and invite your community.
+              </p>
+            </div>
+
+            {/* Card 2 */}
+            <div className="group rounded-2xl border border-[#e2a3c7]/20 bg-white p-8 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-md">
+              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#fdf7fa] text-[#d67ab1] group-hover:bg-[#d67ab1] group-hover:text-white transition-colors duration-300">
+                <RefreshCw className="h-7 w-7 animate-spin-slow" />
+              </div>
+              <h3 className="mb-3 text-xl font-bold text-[#60435f]">Auto-Save</h3>
+              <p className="text-sm leading-relaxed text-gray-600">
+                G$ deducted from your daily UBI. Your pooled circle pot earns yield.
+              </p>
+            </div>
+
+            {/* Card 3 */}
+            <div className="group rounded-2xl border border-[#e2a3c7]/20 bg-white p-8 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-md">
+              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#fdf7fa] text-[#d67ab1] group-hover:bg-[#d67ab1] group-hover:text-white transition-colors duration-300">
+                <CircleDollarSign className="h-7 w-7" />
+              </div>
+              <h3 className="mb-3 text-xl font-bold text-[#60435f]">Get Paid</h3>
+              <p className="text-sm leading-relaxed text-gray-600">
+                When your round turn comes, receive the full pot plus accumulated yield.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ──────────────────────────────────────────────────────── */}
+      <footer className="border-t border-[#e2a3c7]/10 bg-[#fdf7fa] py-8 text-center text-xs font-medium text-gray-400">
+        Powered by <span className="text-gray-500 font-semibold">GoodDollar</span> · Built on{' '}
+        <span className="text-gray-500 font-semibold">Celo</span>
       </footer>
-
-      {/* ── Modal ────────────────────────────────────────────────────────── */}
-      {showCreate && (
-        <CreateCircleModal
-          onClose={() => setShowCreate(false)}
-          onSuccess={() => {
-            setShowCreate(false)
-            refetch()
-          }}
-        />
-      )}
-    </>
+    </div>
   )
 }

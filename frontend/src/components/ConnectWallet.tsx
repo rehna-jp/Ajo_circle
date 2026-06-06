@@ -9,7 +9,7 @@ export function ConnectWallet() {
 
   if (!ready) {
     return (
-      <div className="h-9 w-32 animate-pulse rounded-full bg-celo-mist" />
+      <div className="h-9 w-32 animate-pulse rounded-full bg-gray-100" />
     )
   }
 
@@ -17,7 +17,7 @@ export function ConnectWallet() {
     return (
       <button
         onClick={login}
-        className="rounded-full bg-celo-green px-5 py-2 text-sm font-semibold text-white shadow transition hover:opacity-90 active:scale-95"
+        className="rounded-full bg-[#60435f] px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-[#d67ab1] active:scale-95"
       >
         Connect Wallet
       </button>
@@ -30,7 +30,7 @@ export function ConnectWallet() {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="rounded-full bg-celo-mist px-4 py-1.5 text-sm font-mono text-gray-700">
+      <span className="rounded-full bg-[#fdf7fa] border border-[#e2a3c7] px-4 py-1.5 text-sm font-mono text-[#60435f]">
         {shortAddr}
       </span>
       <button
@@ -42,3 +42,4 @@ export function ConnectWallet() {
     </div>
   )
 }
+
