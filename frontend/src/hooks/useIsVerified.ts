@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { usePublicClient } from 'wagmi'
-import { celoSepolia } from 'viem/chains'
+import { celo } from 'viem/chains'
 import { checkIsVerified } from '@/lib/gooddollar'
 
 export interface UseIsVerifiedResult {
@@ -16,7 +16,7 @@ export interface UseIsVerifiedResult {
 
 /**
  * React hook that checks whether a wallet address holds a valid GoodDollar
- * identity on Celo Alfajores.
+ * identity on Celo Mainnet.
  *
  * Uses wagmi's PublicClient so the hook re-uses the application's existing
  * RPC connection rather than opening a second one.
@@ -36,9 +36,9 @@ export function useIsVerified(address: string | undefined): UseIsVerifiedResult 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Explicitly target Sepolia so the correct client is used even if wagmi
+  // Explicitly target Mainnet so the correct client is used even if wagmi
   // is ever extended with additional chains.
-  const publicClient = usePublicClient({ chainId: celoSepolia.id })
+  const publicClient = usePublicClient({ chainId: celo.id })
 
   // Guard against setting state on an unmounted component or a stale request
   // when address changes quickly (e.g. wallet switch).

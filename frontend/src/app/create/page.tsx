@@ -6,7 +6,7 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagm
 import { parseUnits, decodeEventLog } from 'viem'
 import Link from 'next/link'
 import { ConnectWallet } from '@/components/ConnectWallet'
-import { AJO_FACTORY_ABI, AJO_FACTORY_ADDRESS, G_DOLLAR_ADDRESS, YIELD_VAULT_ADDRESS } from '@/lib/contracts'
+import { AJO_FACTORY_ABI, AJO_FACTORY_ADDRESS, G_DOLLAR_ADDRESS, YIELD_VAULT_ADDRESS, IDENTITY_ADDRESS } from '@/lib/contracts'
 import { useIsVerified } from '@/hooks/useIsVerified'
 import { Copy, Check, ArrowRight, Loader2, Sparkles, ShieldAlert, CheckCircle2 } from 'lucide-react'
 import { toast } from '@/components/Toast'
@@ -125,7 +125,7 @@ export default function CreateCircle() {
         BigInt(selectedFreq.seconds),
         G_DOLLAR_ADDRESS,
         YIELD_VAULT_ADDRESS,
-        '0x0000000000000000000000000000000000000000', // identity contract (disabled for Sepolia easy testing)
+        IDENTITY_ADDRESS,
       ],
     })
   }
@@ -135,7 +135,7 @@ export default function CreateCircle() {
       toast({
         type: 'success',
         title: 'Circle Created!',
-        message: `Savings circle "${name}" is now live on Celo Sepolia.`,
+        message: `Savings circle "${name}" is now live on Celo.`,
         txHash,
       })
     }
@@ -166,7 +166,7 @@ export default function CreateCircle() {
             </div>
             
             <h1 className="mb-2 text-2xl font-extrabold text-[#60435f]">Circle Created Successfully!</h1>
-            <p className="mb-6 text-sm text-gray-500">Your savings circle is live on Celo Sepolia.</p>
+            <p className="mb-6 text-sm text-gray-500">Your savings circle is live on Celo.</p>
 
             <div className="mb-6 rounded-xl bg-gray-50 p-4 text-left">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Circle Details</p>

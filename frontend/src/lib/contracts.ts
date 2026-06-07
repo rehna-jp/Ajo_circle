@@ -20,6 +20,9 @@ export const YIELD_VAULT_ADDRESS =
 export const G_DOLLAR_ADDRESS =
   (process.env.NEXT_PUBLIC_G_DOLLAR_ADDRESS as `0x${string}`) ?? '0x'
 
+export const IDENTITY_ADDRESS =
+  (process.env.NEXT_PUBLIC_IDENTITY_ADDRESS as `0x${string}`) ?? '0xC361A6E67822a0EDc17D899227dd9FC50BD62F42'
+
 // ─── Chain constant ──────────────────────────────────────────────────────────
 
 /** AjoCircle.GRACE_PERIOD = 1 hours (3600 seconds). Added to cycleEnd for UI. */

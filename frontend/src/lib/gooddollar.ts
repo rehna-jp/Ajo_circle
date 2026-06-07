@@ -1,5 +1,5 @@
-import { createPublicClient, http, type PublicClient } from 'viem'
-import { celoSepolia } from 'viem/chains'
+import { createPublicClient, http } from 'viem'
+import { celo } from 'viem/chains'
 import { IdentitySDK, Envs, type contractEnv } from '@goodsdks/identity-sdk'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -13,7 +13,7 @@ import { IdentitySDK, Envs, type contractEnv } from '@goodsdks/identity-sdk'
  * Switching to mainnet is a one-line env change — no code changes required.
  */
 export const GOODDOLLAR_ENV: contractEnv =
-  (process.env.NEXT_PUBLIC_GOODDOLLAR_ENV as contractEnv | undefined) ?? 'staging'
+  (process.env.NEXT_PUBLIC_GOODDOLLAR_ENV as contractEnv | undefined) ?? 'production'
 
 /**
  * URL for GoodDollar's face-verification flow in the current environment.
@@ -38,7 +38,7 @@ export function buildReadOnlySDK(publicClient: any): IdentitySDK {
 // ─── Standalone client (for use outside React) ────────────────────────────────
 
 /**
- * Module-level viem PublicClient for Celo Alfajores.
+ * Module-level viem PublicClient for Celo Mainnet.
  * Lazy-initialised so the module can be imported during SSR without side-effects.
  * React components should prefer the wagmi-provided client via useIsVerified.
  */
@@ -47,9 +47,9 @@ let _standaloneClient: any = null
 function getStandaloneClient(): any {
   if (!_standaloneClient) {
     _standaloneClient = createPublicClient({
-      chain: celoSepolia,
+      chain: celo,
       transport: http(
-        process.env.NEXT_PUBLIC_RPC_URL ?? 'https://forno.celo-sepolia.celo-testnet.org',
+        process.env.NEXT_PUBLIC_RPC_URL ?? 'https://forno.celo.org',
       ),
     })
   }
@@ -85,12 +85,6 @@ export async function checkIsVerified(
   address: string,
   publicClient: any = getStandaloneClient(),
 ): Promise<boolean> {
-  // If we are on Celo Sepolia, bypass GoodDollar verification since there is no
-  // official GoodDollar Identity contract on Sepolia, permitting easy testing.
-  if (publicClient?.chain?.id === 11142220) {
-    return true
-  }
-
   const sdk = buildReadOnlySDK(publicClient)
   const { isWhitelisted } = await sdk.getWhitelistedRoot(address as `0x${string}`)
   return isWhitelisted

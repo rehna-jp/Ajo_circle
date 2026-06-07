@@ -78,14 +78,12 @@ contract DeployAjo is Script {
     ///      On Alfajores there is no official G$ — the script deploys MockGDollar.
     address private constant GDOLLAR_MAINNET = 0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A;
 
-    /// @dev Ubeswap V2 Router on Alfajores — address(0) keeps the vault in
-    ///      hold mode (no LP provision). Replace for mainnet deployment.
-    address private constant UBESWAP_ROUTER = address(0);
+    /// @dev Ubeswap V2 Router. Loaded dynamically based on chain ID.
+    address private ubeswapRouter;
 
     // ── Output paths ──────────────────────────────────────────────────────────
 
     string private constant DEPLOYMENTS_DIR  = "deployments";
-    string private constant DEPLOYMENTS_FILE = "deployments/sepolia.json";
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -106,6 +104,13 @@ contract DeployAjo is Script {
     {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer    = vm.addr(deployerKey);
+
+        // Dynamically set Ubeswap Router based on chain ID
+        if (block.chainid == 42220) {
+            ubeswapRouter = 0xE3D8bd6Aed4F159bc8000a9cD47CffDb95F96121;
+        } else {
+            ubeswapRouter = address(0);
+        }
 
         // Read token address from env; fall back to deploying a mock.
         // vm.envOr returns the env value when set, or address(0) when absent.
@@ -129,7 +134,7 @@ contract DeployAjo is Script {
         factory = new AjoFactory();
 
         // 2. AjoYieldVault — deployer becomes Ownable owner.
-        vault = new AjoYieldVault(gdollarToken, UBESWAP_ROUTER, address(factory));
+        vault = new AjoYieldVault(gdollarToken, ubeswapRouter, address(factory));
 
         vm.stopBroadcast();
 
@@ -144,7 +149,11 @@ contract DeployAjo is Script {
 
     function _logHeader(address deployer, address gdollar, bool mock) private view {
         console.log("=============================================");
-        console.log("  Ajo Deployment  -  Celo Sepolia");
+        if (block.chainid == 42220) {
+            console.log("  Ajo Deployment  -  Celo Mainnet");
+        } else {
+            console.log("  Ajo Deployment  -  Celo Sepolia");
+        }
         console.log("=============================================");
         console.log("Deployer      :", deployer);
         console.log("Chain ID      :", block.chainid);
@@ -153,7 +162,7 @@ contract DeployAjo is Script {
         } else {
             console.log("G$ token      :", gdollar);
         }
-        console.log("Ubeswap router: address(0)  [hold mode]");
+        console.log("Ubeswap router:", ubeswapRouter);
         console.log("---------------------------------------------");
     }
 
@@ -170,7 +179,7 @@ contract DeployAjo is Script {
 
     /**
      * @notice Build a JSON deployment record and write it to
-     *         deployments/alfajores.json, creating the directory if needed.
+     *         deployments/<network>.json, creating the directory if needed.
      *
      *         vm.serializeXxx accumulates key-value pairs under the object key
      *         "ajo". The final serialize call returns the completed JSON string,
@@ -184,9 +193,12 @@ contract DeployAjo is Script {
     ) private {
         vm.createDir(DEPLOYMENTS_DIR, /* recursive */ true);
 
+        string memory networkName = block.chainid == 42220 ? "mainnet" : "sepolia";
+        string memory fileName = string.concat(DEPLOYMENTS_DIR, "/", networkName, ".json");
+
         string memory obj = "ajo";
-        vm.serializeString( obj, "network",      "sepolia");
-        vm.serializeUint(   obj, "chainId",      11142220);
+        vm.serializeString( obj, "network",      networkName);
+        vm.serializeUint(   obj, "chainId",      block.chainid);
         vm.serializeAddress(obj, "AjoYieldVault", vault);
         vm.serializeAddress(obj, "AjoFactory",    factory);
         vm.serializeAddress(obj, "gDollar",       gdollar);
@@ -194,8 +206,8 @@ contract DeployAjo is Script {
         string memory json =
             vm.serializeString(obj, "deployedAt", vm.toString(block.timestamp));
 
-        vm.writeJson(json, DEPLOYMENTS_FILE);
-        console.log("Deployments written  :", DEPLOYMENTS_FILE);
+        vm.writeJson(json, fileName);
+        console.log("Deployments written  :", fileName);
     }
 
     /**
@@ -213,12 +225,12 @@ contract DeployAjo is Script {
         address factory,
         address gdollar,
         bool mockDeployed
-    ) private pure {
-        string memory api = "https://api-sepolia.celoscan.io/api";
+    ) private view {
+        string memory api = block.chainid == 42220 ? "https://api.celoscan.io/api" : "https://api-sepolia.celoscan.io/api";
         string memory tail = string.concat(
             " --verifier-url ", api,
             " --etherscan-api-key $CELOSCAN_API_KEY",
-            " --chain-id 11142220"
+            " --chain-id ", vm.toString(block.chainid)
         );
 
         console.log("");
@@ -248,7 +260,7 @@ contract DeployAjo is Script {
                 "\n  --constructor-args $(cast abi-encode",
                 " \"constructor(address,address,address)\" ",
                 vm.toString(gdollar), " ",
-                vm.toString(UBESWAP_ROUTER), " ",
+                vm.toString(ubeswapRouter), " ",
                 vm.toString(address(factory)), ")",
                 tail
             )

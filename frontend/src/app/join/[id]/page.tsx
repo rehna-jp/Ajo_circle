@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAccount, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
-import { formatUnits, parseUnits } from 'viem'
+import { formatUnits } from 'viem'
 import Link from 'next/link'
 import { ConnectWallet } from '@/components/ConnectWallet'
 import { AJO_CIRCLE_ABI, ERC20_ABI, G_DOLLAR_ADDRESS } from '@/lib/contracts'
+import { useIsVerified } from '@/hooks/useIsVerified'
 import { ArrowRight, Loader2, Sparkles, ShieldCheck, AlertCircle, Coins, Users, Calendar } from 'lucide-react'
 import { toast } from '@/components/Toast'
 import { parseContractError } from '@/lib/errors'
@@ -17,18 +18,9 @@ export default function JoinCircle() {
   const circleAddress = params.id as `0x${string}`
 
   const { address } = useAccount()
+  const { isVerified, isLoading: isVerifyLoading } = useIsVerified(address)
 
-  // GoodDollar Identity Mainnet Address state
-  const [identityAddress, setIdentityAddress] = useState('')
-  const [isVerified, setIsVerified] = useState(true) // Bypassed on Sepolia by default
   const [lastAction, setLastAction] = useState<'approve' | 'join' | null>(null)
-
-  // Set default identity input value when wallet connects
-  useEffect(() => {
-    if (address) {
-      setIdentityAddress(address)
-    }
-  }, [address])
 
   // Batch read circle configuration details
   const { data: circleData, isLoading: isCircleLoading, error: circleLoadError, refetch: refetchCircle } = useReadContracts({
@@ -163,7 +155,7 @@ export default function JoinCircle() {
             <AlertCircle className="mx-auto mb-4 h-12 w-12 text-red-500" />
             <h1 className="text-xl font-bold text-[#60435f]">Failed to Load Circle</h1>
             <p className="mt-2 text-sm text-gray-500">
-              The contract address might be invalid or not yet deployed on Celo Sepolia.
+              The contract address might be invalid or not yet deployed on Celo.
             </p>
             <Link
               href="/"
@@ -247,26 +239,43 @@ export default function JoinCircle() {
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-[#60435f]/80">
                   GoodDollar Identity Verification
                 </label>
-                <input
-                  type="text"
-                  placeholder="Enter GoodDollar Wallet Address"
-                  value={identityAddress}
-                  onChange={(e) => setIdentityAddress(e.target.value)}
-                  className="w-full rounded-xl border border-[#60435f]/20 bg-[#fdf7fa] px-4 py-2.5 text-xs text-[#60435f] outline-none transition focus:border-[#d67ab1]"
-                />
-                
-                <div className="mt-3 flex items-center gap-2 text-[10px] font-semibold text-[#60435f]/70 bg-[#a8dcd9]/15 px-3 py-1.5 rounded-lg border border-[#a8dcd9]/30">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  <span>Celo Sepolia check: Bypassed. Automatically verified as human.</span>
+                <div className="flex justify-between items-center bg-[#fdf7fa] px-3 py-3 rounded-lg text-xs border border-[#e2a3c7]/10">
+                  <span className="font-semibold text-gray-500">Connected Wallet:</span>
+                  <span className="font-mono text-[#60435f]">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Not Connected'}</span>
                 </div>
 
-                <div className="mt-3 flex justify-between items-center bg-[#fdf7fa] px-3 py-2 rounded-lg text-xs border border-[#e2a3c7]/10">
-                  <span className="font-semibold text-gray-500">Status:</span>
-                  <span className="inline-flex items-center gap-1 font-bold text-emerald-600">
-                    <ShieldCheck className="h-4 w-4" />
-                    GoodDollar Verified
-                  </span>
-                </div>
+                {isVerifyLoading ? (
+                  <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200/50">
+                    <Loader2 className="h-4 w-4 animate-spin text-[#d67ab1]" />
+                    <span>Verifying GoodDollar identity on-chain...</span>
+                  </div>
+                ) : isVerified ? (
+                  <div className="mt-3 flex justify-between items-center bg-[#a8dcd9]/15 px-3 py-2.5 rounded-lg text-xs border border-[#a8dcd9]/30">
+                    <span className="font-semibold text-[#60435f]">Status:</span>
+                    <span className="inline-flex items-center gap-1 font-bold text-emerald-600">
+                      <ShieldCheck className="h-4 w-4" />
+                      GoodDollar Verified
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-col gap-2 rounded-lg bg-red-50 p-3 text-xs border border-red-100">
+                    <div className="flex items-center gap-1.5 font-semibold text-red-700">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>Not GoodDollar Verified</span>
+                    </div>
+                    <p className="text-gray-600 text-[11px]">
+                      Ajo Circle requires unique human verification to prevent multi-wallet sybil attacks.
+                    </p>
+                    <a
+                      href="https://wallet.gooddollar.org"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex items-center justify-center rounded-lg bg-[#60435f] py-1.5 px-3 text-[11px] font-bold text-white transition hover:bg-[#d67ab1] w-fit"
+                    >
+                      Get Verified on GoodDollar
+                    </a>
+                  </div>
+                )}
               </div>
 
               {/* Tx Action Error Box */}
@@ -297,7 +306,7 @@ export default function JoinCircle() {
                     /* Step 1 — Approve */
                     <button
                       onClick={handleApprove}
-                      disabled={busy || isFull}
+                      disabled={busy || isFull || !isVerified}
                       className="flex w-full items-center justify-center gap-2 rounded-full bg-[#d67ab1] py-3.5 text-sm font-bold text-white shadow transition hover:bg-[#e2a3c7] disabled:opacity-50"
                     >
                       {busy ? (
@@ -316,7 +325,7 @@ export default function JoinCircle() {
                     /* Step 2 — Join */
                     <button
                       onClick={handleJoin}
-                      disabled={busy || isFull}
+                      disabled={busy || isFull || !isVerified}
                       className="flex w-full items-center justify-center gap-2 rounded-full bg-[#60435f] py-3.5 text-sm font-bold text-white shadow transition hover:bg-[#d67ab1] disabled:opacity-50"
                     >
                       {busy ? (
