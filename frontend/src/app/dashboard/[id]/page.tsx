@@ -17,7 +17,7 @@ import {
   ERC20_ABI,
   G_DOLLAR_ADDRESS,
 } from '@/lib/contracts'
-import { ConnectWallet } from '@/components/ConnectWallet'
+import { Navbar } from '@/components/Navbar'
 import { toast } from '@/components/Toast'
 import { parseContractError } from '@/lib/errors'
 import {
@@ -359,22 +359,8 @@ export default function DashboardPage() {
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[#fdf7fa] font-sans text-gray-800">
-      {/* ── Navbar ────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-[#e2a3c7]/20 bg-[#fdf7fa]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center gap-2 transition hover:opacity-90">
-              <img src="/logo.png" alt="Ajo Logo" className="h-8 w-auto object-contain" />
-            </Link>
-            <span className="hidden text-[#60435f]/30 sm:inline">/</span>
-            <span className="hidden text-sm font-semibold text-[#60435f] sm:inline">
-              {circleName ?? 'Loading…'}
-            </span>
-          </div>
-          <ConnectWallet />
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <Navbar />
 
       {loading ? (
         /* ── Loading skeleton ─────────────────────────────────────────────── */
@@ -398,7 +384,7 @@ export default function DashboardPage() {
 
             <button
               onClick={handleCopyAddr}
-              className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-mono font-semibold text-gray-500 border border-gray-200 hover:border-[#d67ab1]/30 transition"
+              className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-mono font-semibold text-slate-600 border border-slate-200 hover:border-slate-300 transition"
             >
               {shorten(circleAddress)}
               {copiedAddr ? (

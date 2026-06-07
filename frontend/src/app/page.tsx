@@ -4,7 +4,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useAccount, useReadContract } from 'wagmi'
 import { formatUnits } from 'viem'
 import Link from 'next/link'
-import { ConnectWallet } from '@/components/ConnectWallet'
+import { Navbar } from '@/components/Navbar'
 import { G_DOLLAR_ADDRESS, ERC20_ABI } from '@/lib/contracts'
 import { UserPlus, RefreshCw, CircleDollarSign, ArrowRight } from 'lucide-react'
 
@@ -29,16 +29,8 @@ export default function Home() {
     : null
 
   return (
-    <div className="min-h-screen bg-[#fdf7fa] font-sans text-gray-800">
-      {/* ── Navbar ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-[#e2a3c7]/20 bg-[#fdf7fa]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2 transition hover:opacity-90">
-            <img src="/logo.png" alt="Ajo Logo" className="h-8 w-auto object-contain" />
-          </Link>
-          <ConnectWallet />
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <Navbar />
 
       {/* ── Hero Section ────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-[#60435f] py-24 text-center text-[#fdf7fa] md:py-32">

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useReadContract, useReadContracts } from 'wagmi'
 import { formatUnits } from 'viem'
 import { AJO_FACTORY_ABI, AJO_FACTORY_ADDRESS, AJO_CIRCLE_ABI } from '@/lib/contracts'
-import { ConnectWallet } from '@/components/ConnectWallet'
+import { Navbar } from '@/components/Navbar'
 import { Search, Loader2, ArrowRight, Coins, Users, Calendar, Sparkles, PlusCircle } from 'lucide-react'
 
 // Helper for formatting frequency
@@ -50,22 +50,14 @@ export default function JoinBrowsePage() {
   const reversedAddresses = circleAddresses ? [...circleAddresses].reverse() : []
 
   return (
-    <div className="min-h-screen bg-[#fdf7fa] font-sans text-gray-800">
-      {/* ── Navbar ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-[#e2a3c7]/20 bg-[#fdf7fa]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2 transition hover:opacity-90">
-            <img src="/logo.png" alt="Ajo Logo" className="h-8 w-auto object-contain" />
-          </Link>
-          <ConnectWallet />
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <Navbar />
 
       {/* ── Main Container ─────────────────────────────────────────────── */}
       <main className="mx-auto max-w-4xl px-6 py-12">
         <div className="mb-10 text-center">
-          <h1 className="text-3xl font-extrabold text-[#60435f] sm:text-4xl">Browse Savings Circles</h1>
-          <p className="mt-2 text-sm text-gray-500">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Browse Savings Circles</h1>
+          <p className="mt-3 text-sm leading-7 text-slate-500 max-w-2xl mx-auto">
             Join an existing Ajo circle by entering its contract address or choose one from the list below.
           </p>
         </div>
@@ -92,7 +84,7 @@ export default function JoinBrowsePage() {
               </div>
               <button
                 type="submit"
-                className="flex items-center justify-center gap-2 rounded-xl bg-[#d67ab1] px-6 py-3.5 text-xs font-bold text-white shadow transition hover:bg-[#e2a3c7]"
+                className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-3.5 text-xs font-bold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800"
               >
                 Find Circle
                 <ArrowRight className="h-4 w-4" />

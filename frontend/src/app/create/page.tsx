@@ -5,7 +5,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseUnits, decodeEventLog } from 'viem'
 import Link from 'next/link'
-import { ConnectWallet } from '@/components/ConnectWallet'
+import { Navbar } from '@/components/Navbar'
 import { AJO_FACTORY_ABI, AJO_FACTORY_ADDRESS, G_DOLLAR_ADDRESS, YIELD_VAULT_ADDRESS, IDENTITY_ADDRESS } from '@/lib/contracts'
 import { useIsVerified } from '@/hooks/useIsVerified'
 import { Copy, Check, ArrowRight, Loader2, Sparkles, ShieldAlert, CheckCircle2 } from 'lucide-react'
@@ -145,16 +145,8 @@ export default function CreateCircle() {
   const errorMsg = formError || (writeError || confirmError ? parseContractError(writeError || confirmError) : '')
 
   return (
-    <div className="min-h-screen bg-[#fdf7fa] font-sans text-gray-800">
-      {/* ── Navbar ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-[#e2a3c7]/20 bg-[#fdf7fa]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2 transition hover:opacity-90">
-            <img src="/logo.png" alt="Ajo Logo" className="h-8 w-auto object-contain" />
-          </Link>
-          <ConnectWallet />
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <Navbar />
 
       {/* ── Page Content ────────────────────────────────────────────────── */}
       <main className="mx-auto max-w-xl px-6 py-12">
