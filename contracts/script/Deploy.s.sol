@@ -24,11 +24,11 @@ contract MockGDollar is ERC20 {
 
 /**
  * @title DeployAjo
- * @notice Deploys AjoYieldVault and AjoFactory to Celo Alfajores (or mainnet).
- *         Writes deployed addresses to deployments/alfajores.json.
+ * @notice Deploys AjoYieldVault and AjoFactory to Celo Sepolia (or mainnet).
+ *         Writes deployed addresses to deployments/sepolia.json.
  *
  * ─── Token address ────────────────────────────────────────────────────────────
- *   G$ has no official Alfajores deployment. Two options:
+ *   G$ has no official Sepolia deployment. Two options:
  *
  *   a) Let the script deploy a MockGDollar (default — set nothing):
  *      The script detects a missing GDOLLAR_ADDRESS and deploys the mock.
@@ -46,7 +46,7 @@ contract MockGDollar is ERC20 {
  *   the Celoscan URL automatically.
  *
  *   forge script script/Deploy.s.sol \
- *     --rpc-url celo_alfajores \
+ *     --rpc-url celo_sepolia \
  *     --broadcast \
  *     --verify \
  *     -vvvv
@@ -56,7 +56,7 @@ contract MockGDollar is ERC20 {
  *     --rpc-url $CELO_TESTNET_RPC \
  *     --broadcast \
  *     --verify \
- *     --verifier-url https://api-alfajores.celoscan.io/api \
+ *     --verifier-url https://sepolia.celoscan.io/ \
  *     --etherscan-api-key $CELOSCAN_API_KEY \
  *     -vvvv
  *
@@ -75,7 +75,7 @@ contract DeployAjo is Script {
 
     /// @dev Celo mainnet G$ (verified EIP-55 checksum). Used as default when
     ///      GDOLLAR_ADDRESS env var is set to the mainnet value.
-    ///      On Alfajores there is no official G$ — the script deploys MockGDollar.
+    ///      On Sepolia there is no official G$ — the script deploys MockGDollar.
     address private constant GDOLLAR_MAINNET = 0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A;
 
     /// @dev Ubeswap V2 Router. Loaded dynamically based on chain ID.
