@@ -19,25 +19,38 @@ A decentralised rotating savings circle (ROSCA) built on **Celo Mainnet**, denom
 ## Repository Layout
 
 ```
-ajo-circle/
+Ajo_circle/
 ├── contracts/             # Foundry project
 │   ├── src/
-│   │   └── AjoCircle.sol  # Core ROSCA contract
-│   ├── test/
-│   │   └── AjoCircle.t.sol
+│   │   ├── AjoCircle.sol
+│   │   ├── AjoFactory.sol
+│   │   └── AjoYieldVault.sol
+│   ├── interfaces/
+│   │   └── IIdentity.sol
 │   ├── script/
 │   │   └── Deploy.s.sol
+│   ├── test/
+│   │   ├── AjoCircle.t.sol
+│   │   ├── AjoFactory.t.sol
+│   │   └── AjoYieldVault.t.sol
 │   └── foundry.toml
-├── frontend/              # Next.js 14 app
+├── frontend/              # Next.js app
 │   ├── src/
-│   │   ├── app/           # App Router pages & layouts
-│   │   ├── components/    # React components
-│   │   └── lib/           # wagmi config, contract ABIs
-│   └── package.json
+│   │   ├── app/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── lib/
+│   │   └── public/
+│   ├── public/
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── tailwind.config.ts
 ├── .github/
 │   └── workflows/
-│       └── ci.yml         # forge test + next build on every PR
-│   └── package.json           # npm workspaces root
+│       └── ci.yml
+├── package.json           # repo npm workspace + scripts
+├── package-lock.json
+└── README.md
 ```
 
 ---
@@ -88,10 +101,9 @@ Edit `frontend/.env.local`:
 ```env
 NEXT_PUBLIC_PRIVY_APP_ID=your-privy-app-id
 NEXT_PUBLIC_GOODDOLLAR_ENV=production
-NEXT_PUBLIC_AJO_FACTORY_ADDRESS=0x...deployed-contract-address
-NEXT_PUBLIC_YIELD_VAULT_ADDRESS=0x...yield-vault-address
-NEXT_PUBLIC_G_DOLLAR_ADDRESS=0x...g-dollar-token-address
-```
+NEXT_PUBLIC_AJO_FACTORY_ADDRESS=0x5d872B5fe7334577d15Acbd7E62Dd954930eC85D
+NEXT_PUBLIC_YIELD_VAULT_ADDRESS=0xE869345337E1cec4A84De62dA356259C262CB3B5
+NEXT_PUBLIC_G_DOLLAR_ADDRESS=0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A```
 
 To get a Privy App ID, create a project at [privy.io](https://privy.io).
 
