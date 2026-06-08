@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useAccount, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useSimulateContract } from 'wagmi'
 import { formatUnits } from 'viem'
 import Link from 'next/link'
 import { Navbar } from '@/components/Navbar'
 import { ConnectWallet } from '@/components/ConnectWallet'
 import { AJO_CIRCLE_ABI, ERC20_ABI, G_DOLLAR_ADDRESS } from '@/lib/contracts'
 import { useIsVerified } from '@/hooks/useIsVerified'
+import { VerificationBanner } from '@/components/VerificationBanner'
 import { ArrowRight, Loader2, Sparkles, ShieldCheck, AlertCircle, Coins, Users, Calendar } from 'lucide-react'
 import { toast } from '@/components/Toast'
 import { parseContractError } from '@/lib/errors'
@@ -65,6 +66,22 @@ export default function JoinCircle() {
 
   const needsApproval = allowance === undefined || contributionAmount === undefined || allowance < collateralAmount
 
+  // Pre-flight Simulations
+  const { data: approveSimData } = useSimulateContract({
+    address: G_DOLLAR_ADDRESS,
+    abi: ERC20_ABI,
+    functionName: 'approve',
+    args: [circleAddress, collateralAmount],
+    query: { enabled: !!address && needsApproval && !!contributionAmount && isVerified },
+  })
+
+  const { data: joinSimData } = useSimulateContract({
+    address: circleAddress,
+    abi: AJO_CIRCLE_ABI,
+    functionName: 'joinCircle',
+    query: { enabled: !!address && !needsApproval && isVerified && !isAlreadyMember && !isFull },
+  })
+
   // Transaction execution
   const { writeContract, data: txHash, isPending: isTxPending, error: txError } = useWriteContract()
 
@@ -102,21 +119,29 @@ export default function JoinCircle() {
   const handleApprove = () => {
     if (!contributionAmount) return
     setLastAction('approve')
-    writeContract({
-      address: G_DOLLAR_ADDRESS,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [circleAddress, collateralAmount],
-    })
+    if (approveSimData?.request) {
+      writeContract(approveSimData.request)
+    } else {
+      writeContract({
+        address: G_DOLLAR_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [circleAddress, collateralAmount],
+      })
+    }
   }
 
   const handleJoin = () => {
     setLastAction('join')
-    writeContract({
-      address: circleAddress,
-      abi: AJO_CIRCLE_ABI,
-      functionName: 'joinCircle',
-    })
+    if (joinSimData?.request) {
+      writeContract(joinSimData.request)
+    } else {
+      writeContract({
+        address: circleAddress,
+        abi: AJO_CIRCLE_ABI,
+        functionName: 'joinCircle',
+      })
+    }
   }
 
   // Format cycle duration
@@ -238,9 +263,8 @@ export default function JoinCircle() {
                 </div>
 
                 {isVerifyLoading ? (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200/50">
-                    <Loader2 className="h-4 w-4 animate-spin text-[#d67ab1]" />
-                    <span>Verifying GoodDollar identity on-chain...</span>
+                  <div className="mt-3">
+                    <VerificationBanner isLoading={true} />
                   </div>
                 ) : isVerified ? (
                   <div className="mt-3 flex justify-between items-center bg-[#a8dcd9]/15 px-3 py-2.5 rounded-lg text-xs border border-[#a8dcd9]/30">
@@ -251,22 +275,8 @@ export default function JoinCircle() {
                     </span>
                   </div>
                 ) : (
-                  <div className="mt-3 flex flex-col gap-2 rounded-lg bg-red-50 p-3 text-xs border border-red-100">
-                    <div className="flex items-center gap-1.5 font-semibold text-red-700">
-                      <AlertCircle className="h-4 w-4" />
-                      <span>Not GoodDollar Verified</span>
-                    </div>
-                    <p className="text-gray-600 text-[11px]">
-                      Ajo Circle requires unique human verification to prevent multi-wallet sybil attacks.
-                    </p>
-                    <a
-                      href="https://wallet.gooddollar.org"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-flex items-center justify-center rounded-lg bg-[#60435f] py-1.5 px-3 text-[11px] font-bold text-white transition hover:bg-[#d67ab1] w-fit"
-                    >
-                      Get Verified on GoodDollar
-                    </a>
+                  <div className="mt-3">
+                    <VerificationBanner />
                   </div>
                 )}
               </div>

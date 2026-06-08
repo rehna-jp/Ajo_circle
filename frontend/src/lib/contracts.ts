@@ -11,17 +11,21 @@
 
 // ─── Deployed addresses (fill after `npm run deploy:sepolia`) ────────────────
 
-export const AJO_FACTORY_ADDRESS =
-  (process.env.NEXT_PUBLIC_AJO_FACTORY_ADDRESS as `0x${string}`) ?? '0x'
+function getRequiredAddress(envVarName: string, defaultValue?: string): `0x${string}` {
+  const val = process.env[envVarName] || defaultValue
+  if (!val) {
+    throw new Error(`Environment variable ${envVarName} is missing. Please set it in your .env.local file.`)
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(val)) {
+    throw new Error(`Environment variable ${envVarName} must be a valid 20-byte hex address starting with 0x. Got "${val}".`)
+  }
+  return val as `0x${string}`
+}
 
-export const YIELD_VAULT_ADDRESS =
-  (process.env.NEXT_PUBLIC_YIELD_VAULT_ADDRESS as `0x${string}`) ?? '0x'
-
-export const G_DOLLAR_ADDRESS =
-  (process.env.NEXT_PUBLIC_G_DOLLAR_ADDRESS as `0x${string}`) ?? '0x'
-
-export const IDENTITY_ADDRESS =
-  (process.env.NEXT_PUBLIC_IDENTITY_ADDRESS as `0x${string}`) ?? '0xC361A6E67822a0EDc17D899227dd9FC50BD62F42'
+export const AJO_FACTORY_ADDRESS = getRequiredAddress('NEXT_PUBLIC_AJO_FACTORY_ADDRESS')
+export const YIELD_VAULT_ADDRESS = getRequiredAddress('NEXT_PUBLIC_YIELD_VAULT_ADDRESS')
+export const G_DOLLAR_ADDRESS = getRequiredAddress('NEXT_PUBLIC_G_DOLLAR_ADDRESS')
+export const IDENTITY_ADDRESS = getRequiredAddress('NEXT_PUBLIC_IDENTITY_ADDRESS', '0xC361A6E67822a0EDc17D899227dd9FC50BD62F42')
 
 // ─── Chain constant ──────────────────────────────────────────────────────────
 

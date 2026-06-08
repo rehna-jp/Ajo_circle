@@ -22,12 +22,23 @@ export default function JoinBrowsePage() {
   const router = useRouter()
   const [searchAddress, setSearchAddress] = useState('')
   const [searchError, setSearchError] = useState('')
+  const [filterQuery, setFilterQuery] = useState('')
 
   // 1. Fetch all circle addresses from factory
   const { data: circleAddresses, isLoading: isListLoading, error: listError } = useReadContract({
     address: AJO_FACTORY_ADDRESS,
     abi: AJO_FACTORY_ABI,
     functionName: 'getAllCircles',
+  })
+
+  // 2. Batch read names of all circles for real-time search filtering
+  const { data: circleNames } = useReadContracts({
+    contracts: circleAddresses?.map((addr) => ({
+      address: addr,
+      abi: AJO_CIRCLE_ABI,
+      functionName: 'name',
+    })) ?? [],
+    query: { enabled: !!circleAddresses && circleAddresses.length > 0 },
   })
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -46,24 +57,32 @@ export default function JoinBrowsePage() {
     router.push(`/join/${cleanAddr}`)
   }
 
-  // Slice list or reverse to show newest first
-  const reversedAddresses = circleAddresses ? [...circleAddresses].reverse() : []
+  // Combine address and pre-fetched names, reverse to show newest first
+  const circles = (circleAddresses ?? []).map((addr, index) => ({
+    address: addr,
+    name: (circleNames?.[index]?.result as string) ?? '',
+  }))
+
+  const filteredCircles = circles.filter(c => 
+    c.address.toLowerCase().includes(filterQuery.toLowerCase()) || 
+    c.name.toLowerCase().includes(filterQuery.toLowerCase())
+  ).reverse()
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="min-h-screen bg-transparent font-sans text-slate-900">
       <Navbar />
 
       {/* ── Main Container ─────────────────────────────────────────────── */}
       <main className="mx-auto max-w-4xl px-6 py-12">
         <div className="mb-10 text-center">
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Browse Savings Circles</h1>
-          <p className="mt-3 text-sm leading-7 text-slate-500 max-w-2xl mx-auto">
+          <h1 className="text-3xl font-extrabold tracking-tight text-[#60435f] sm:text-4xl">Browse Savings Circles</h1>
+          <p className="mt-3 text-sm leading-7 text-slate-500 max-w-2xl mx-auto font-medium">
             Join an existing Ajo circle by entering its contract address or choose one from the list below.
           </p>
         </div>
 
         {/* ── Address Search Form ────────────────────────────────────────── */}
-        <div className="mb-12 rounded-2xl border border-[#e2a3c7]/20 bg-white p-6 shadow-md">
+        <div className="mb-12 rounded-2xl border border-[#e2a3c7]/20 bg-white/65 backdrop-blur-sm p-6 shadow-sm">
           <form onSubmit={handleSearchSubmit}>
             <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-[#60435f]/80">
               Join via Circle Address
@@ -78,31 +97,47 @@ export default function JoinBrowsePage() {
                     setSearchAddress(e.target.value)
                     setSearchError('')
                   }}
-                  className="w-full rounded-xl border border-[#60435f]/20 bg-[#fdf7fa] pl-10 pr-4 py-3.5 text-xs text-[#60435f] outline-none transition focus:border-[#d67ab1]"
+                  className="w-full rounded-xl border border-[#60435f]/20 bg-[#fdf7fa] pl-10 pr-4 py-3.5 text-xs text-[#60435f] outline-none transition focus:border-[#d67ab1] font-semibold"
                 />
                 <Search className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-[#60435f]/40" />
               </div>
               <button
                 type="submit"
-                className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-3.5 text-xs font-bold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800"
+                className="flex items-center justify-center gap-2 rounded-xl bg-[#60435f] px-6 py-3.5 text-xs font-bold text-white shadow shadow-[#60435f]/15 transition-all hover:bg-[#d67ab1] active:scale-95"
               >
                 Find Circle
                 <ArrowRight className="h-4 w-4" />
               </button>
             </div>
             {searchError && (
-              <p className="mt-2.5 text-xs font-medium text-red-600">{searchError}</p>
+              <p className="mt-2.5 text-xs font-semibold text-red-600">{searchError}</p>
             )}
           </form>
         </div>
 
         {/* ── Deployed Circles List ──────────────────────────────────────── */}
         <section>
-          <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-[#60435f]">Active ROSCA Circles</h2>
-            <span className="rounded-full bg-[#60435f]/5 px-3 py-1 text-xs font-semibold text-[#60435f]">
-              {circleAddresses ? `${circleAddresses.length} Deployed` : '—'}
-            </span>
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-[#60435f]">Active ROSCA Circles</h2>
+              <span className="rounded-full bg-[#60435f]/5 px-3 py-1 text-xs font-bold text-[#60435f]">
+                {circleAddresses ? `${circleAddresses.length} Deployed` : '—'}
+              </span>
+            </div>
+            
+            {/* Real-time search filter */}
+            {circleAddresses && circleAddresses.length > 0 && (
+              <div className="relative w-full sm:w-64">
+                <input
+                  type="text"
+                  placeholder="Search circles by name or address..."
+                  value={filterQuery}
+                  onChange={(e) => setFilterQuery(e.target.value)}
+                  className="w-full rounded-lg border border-[#e2a3c7]/20 bg-white px-3 py-2 pl-9 text-xs text-[#60435f] outline-none transition focus:border-[#d67ab1] font-medium"
+                />
+                <Search className="absolute left-3 top-3 h-3.5 w-3.5 text-[#60435f]/40" />
+              </div>
+            )}
           </div>
 
           {isListLoading ? (
@@ -111,30 +146,37 @@ export default function JoinBrowsePage() {
               <p className="mt-3 text-xs font-semibold text-gray-500">Loading deployed circles…</p>
             </div>
           ) : listError ? (
-            <div className="rounded-xl border border-red-100 bg-white p-8 text-center shadow-sm">
+            <div className="rounded-xl border border-red-100 bg-white/70 backdrop-blur-sm p-8 text-center shadow-sm">
               <p className="text-sm text-red-600 font-semibold">Failed to fetch savings circles.</p>
               <p className="mt-1 text-xs text-gray-400">Please check your RPC connection.</p>
             </div>
-          ) : reversedAddresses.length === 0 ? (
+          ) : filteredCircles.length === 0 ? (
             /* Empty state */
-            <div className="rounded-2xl border-2 border-dashed border-[#e2a3c7]/20 bg-white p-12 text-center shadow-sm">
-              <PlusCircle className="mx-auto mb-4 h-12 w-12 text-[#60435f]/20" />
-              <h3 className="text-lg font-bold text-[#60435f]">Create your first Ajo circle</h3>
-              <p className="mt-2 text-xs text-gray-500 max-w-sm mx-auto">
-                No savings circles have been created yet on this network. Be the pioneer and launch one now!
+            <div className="rounded-2xl border border-dashed border-[#e2a3c7]/30 bg-white/60 backdrop-blur-sm p-12 text-center shadow-sm">
+              <PlusCircle className="mx-auto mb-4 h-12 w-12 text-[#60435f]/25" />
+              <h3 className="text-lg font-bold text-[#60435f]">
+                {filterQuery ? 'No matching circles found' : 'Create your first Ajo circle'}
+              </h3>
+              <p className="mt-2 text-xs text-slate-500 max-w-sm mx-auto font-medium">
+                {filterQuery 
+                  ? 'Try searching with a different circle name or address prefix.' 
+                  : 'No savings circles have been created yet on this network. Be the pioneer and launch one now!'
+                }
               </p>
-              <Link
-                href="/create"
-                className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#60435f] px-6 py-2.5 text-xs font-bold text-white shadow transition hover:bg-[#d67ab1]"
-              >
-                Launch Circle
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
+              {!filterQuery && (
+                <Link
+                  href="/create"
+                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#60435f] px-6 py-2.5 text-xs font-bold text-white shadow transition hover:bg-[#d67ab1]"
+                >
+                  Launch Circle
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              )}
             </div>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2">
-              {reversedAddresses.map((addr) => (
-                <CircleAddressCard key={addr} address={addr} />
+              {filteredCircles.map((c) => (
+                <CircleAddressCard key={c.address} address={c.address} preloadedName={c.name} />
               ))}
             </div>
           )}
@@ -146,7 +188,7 @@ export default function JoinBrowsePage() {
 
 // ─── Individual Circle Card ──────────────────────────────────────────────────
 
-function CircleAddressCard({ address }: { address: `0x${string}` }) {
+function CircleAddressCard({ address, preloadedName }: { address: `0x${string}`; preloadedName?: string }) {
   const router = useRouter()
 
   // Batch read circle data
@@ -162,18 +204,18 @@ function CircleAddressCard({ address }: { address: `0x${string}` }) {
 
   if (isLoading) {
     return (
-      <div className="animate-pulse rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-        <div className="h-5 w-2/3 rounded bg-gray-200" />
-        <div className="mt-3 h-4 w-1/2 rounded bg-gray-200" />
+      <div className="animate-pulse rounded-2xl border border-[#e2a3c7]/10 bg-white/40 p-6 shadow-sm">
+        <div className="h-5 w-2/3 rounded bg-slate-200" />
+        <div className="mt-3 h-4 w-1/2 rounded bg-slate-200" />
         <div className="mt-6 grid grid-cols-2 gap-2">
-          <div className="h-8 rounded bg-gray-100" />
-          <div className="h-8 rounded bg-gray-100" />
+          <div className="h-8 rounded bg-slate-100" />
+          <div className="h-8 rounded bg-slate-100" />
         </div>
       </div>
     )
   }
 
-  const name = circleData?.[0]?.result as string | undefined
+  const name = preloadedName || (circleData?.[0]?.result as string | undefined)
   const contribution = circleData?.[1]?.result as bigint | undefined
   const maxMembers = circleData?.[2]?.result as bigint | undefined
   const activeMembers = circleData?.[3]?.result as bigint | undefined
