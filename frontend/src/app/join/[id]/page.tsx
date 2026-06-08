@@ -6,6 +6,7 @@ import { useAccount, useReadContract, useReadContracts, useWriteContract, useWai
 import { formatUnits } from 'viem'
 import Link from 'next/link'
 import { Navbar } from '@/components/Navbar'
+import { ConnectWallet } from '@/components/ConnectWallet'
 import { AJO_CIRCLE_ABI, ERC20_ABI, G_DOLLAR_ADDRESS } from '@/lib/contracts'
 import { useIsVerified } from '@/hooks/useIsVerified'
 import { ArrowRight, Loader2, Sparkles, ShieldCheck, AlertCircle, Coins, Users, Calendar } from 'lucide-react'

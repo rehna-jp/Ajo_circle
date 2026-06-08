@@ -11,10 +11,10 @@ export function Navbar() {
           <img
             src="/logo.png"
             alt="Ajo Logo"
-            className="h-14 w-auto rounded-2xl border border-slate-100 bg-white p-2 shadow-sm"
+            className="h-18 w-auto "
           />
           <div>
-            <p className="text-xl font-black tracking-tight text-slate-950">Ajo Circle</p>
+            <p className="text-xl font-black tracking-tight text-slate-950">Ajo</p>
             <p className="text-xs uppercase tracking-[0.32em] text-slate-500">Smart savings on Celo</p>
           </div>
         </Link>
