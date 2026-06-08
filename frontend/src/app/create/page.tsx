@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { Navbar } from '@/components/Navbar'
 import { AJO_FACTORY_ABI, AJO_FACTORY_ADDRESS, G_DOLLAR_ADDRESS, YIELD_VAULT_ADDRESS, IDENTITY_ADDRESS } from '@/lib/contracts'
 import { useIsVerified } from '@/hooks/useIsVerified'
-import { Copy, Check, ArrowRight, Loader2, Sparkles, ShieldAlert, CheckCircle2 } from 'lucide-react'
+import { Copy, Check, ArrowRight, Loader2, ShieldAlert, CheckCircle2 } from 'lucide-react'
 import { toast } from '@/components/Toast'
 import { parseContractError } from '@/lib/errors'
 
@@ -27,7 +27,6 @@ export default function CreateCircle() {
   const [maxMembers, setMaxMembers] = useState('5')
   const [contribution, setContribution] = useState('50')
   const [frequencyIndex, setFrequencyIndex] = useState(0)
-  const [payoutOrder, setPayoutOrder] = useState('join') // 'join' or 'random'
   const [formError, setFormError] = useState('')
 
   // Copy share link state
@@ -293,39 +292,6 @@ export default function CreateCircle() {
                 </div>
               </div>
 
-              {/* Payout Order */}
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#60435f]/70">
-                  Payout Order
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-[#60435f]">
-                    <input
-                      type="radio"
-                      name="payoutOrder"
-                      value="join"
-                      checked={payoutOrder === 'join'}
-                      onChange={() => setPayoutOrder('join')}
-                      disabled={busy}
-                      className="accent-[#d67ab1]"
-                    />
-                    Join Order
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-400" title="Coming soon in contract upgrade">
-                    <input
-                      type="radio"
-                      name="payoutOrder"
-                      value="random"
-                      checked={payoutOrder === 'random'}
-                      onChange={() => setPayoutOrder('random')}
-                      disabled={busy}
-                      className="accent-[#d67ab1]"
-                    />
-                    Random Draw (Soon)
-                  </label>
-                </div>
-              </div>
-
               {/* ── Real-Time Preview Card ────────────────────────────────── */}
               <div className="rounded-xl border border-[#e2a3c7]/10 bg-[#fdf7fa] p-4 text-xs">
                 <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#60435f]/60">Circle Preview</p>
@@ -340,9 +306,8 @@ export default function CreateCircle() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-500">Estimated cycle yield:</span>
-                    <span className="flex items-center gap-0.5 font-bold text-emerald-600">
-                      <Sparkles className="h-3 w-3" />
-                      ~8% APY
+                    <span className="font-bold text-emerald-600">
+                      Yield TBD
                     </span>
                   </div>
                   <div className="flex justify-between">

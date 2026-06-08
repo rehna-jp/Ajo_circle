@@ -8,6 +8,12 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      spacing: {
+        '18': '4.5rem',  // h-18 used in Navbar logo
+      },
+      animation: {
+        'spin-slow': 'spin 3s linear infinite',
+      },
       colors: {
         // Celo brand palette
         celo: {

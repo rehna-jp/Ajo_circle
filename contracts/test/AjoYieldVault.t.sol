@@ -240,4 +240,63 @@ contract AjoYieldVaultTest is Test {
         vm.expectRevert(AjoYieldVault.NotApprovedCircle.selector);
         vault.deposit(DEPOSIT);
     }
+
+    // ─── Regression Tests ─────────────────────────────────────────────────────
+
+    /**
+     * @notice Regression test verifying that once a circle is replaced by another
+     *         approved circle, the former circle cannot call withdrawAll to drain the
+     *         new circle's funds.
+     */
+    function test_StaleApproval_CannotDrainNewCircle() public {
+        address circleA = circle;
+        address circleB = makeAddr("circleB");
+        token.mint(circleB, 10_000e18);
+        vm.prank(circleB);
+        token.approve(address(vault), type(uint256).max);
+
+        // 1. Circle A deposits and withdraws
+        vault.approveCircle(circleA);
+        vm.prank(circleA);
+        vault.deposit(DEPOSIT);
+        vm.prank(circleA);
+        vault.withdrawAll();
+
+        // 2. Circle B is approved and deposits
+        vault.approveCircle(circleB);
+        vm.prank(circleB);
+        vault.deposit(DEPOSIT);
+
+        // 3. Circle A tries to drain — MUST revert
+        vm.prank(circleA);
+        vm.expectRevert(AjoYieldVault.NotApprovedCircle.selector);
+        vault.withdrawAll();
+    }
+
+    /**
+     * @notice Regression test verifying that once a circle is replaced by another
+     *         approved circle, the former circle cannot deposit anymore.
+     */
+    function test_StaleApproval_CannotDeposit() public {
+        address circleA = circle;
+        address circleB = makeAddr("circleB");
+        token.mint(circleB, 10_000e18);
+        vm.prank(circleB);
+        token.approve(address(vault), type(uint256).max);
+
+        // 1. Circle A deposits and withdraws
+        vault.approveCircle(circleA);
+        vm.prank(circleA);
+        vault.deposit(DEPOSIT);
+        vm.prank(circleA);
+        vault.withdrawAll();
+
+        // 2. Circle B is approved
+        vault.approveCircle(circleB);
+
+        // 3. Circle A tries to deposit again — MUST revert
+        vm.prank(circleA);
+        vm.expectRevert(AjoYieldVault.NotApprovedCircle.selector);
+        vault.deposit(DEPOSIT);
+    }
 }

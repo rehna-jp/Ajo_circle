@@ -200,10 +200,6 @@ export default function DashboardPage() {
 
   // ─── Computed values ────────────────────────────────────────────────────
 
-  const collateralRequired = contributionAmt
-    ? (contributionAmt * BigInt(1000)) / BigInt(10_000)
-    : undefined
-
   const totalPot = contributionAmt && activeMemberCount
     ? contributionAmt * activeMemberCount
     : undefined
@@ -213,10 +209,6 @@ export default function DashboardPage() {
     : undefined
 
   const cycleStarted = cycleStartTime !== undefined && cycleStartTime > BigInt(0)
-
-  const isCreator = creator && userAddress
-    ? creator.toLowerCase() === userAddress.toLowerCase()
-    : false
 
   const payoutReady =
     cycleEndTs !== undefined && now / 1000 >= cycleEndTs
@@ -253,7 +245,7 @@ export default function DashboardPage() {
       refetchAllowance()
       
       let title = 'Transaction Successful'
-      let message = 'Your transaction has been confirmed on Celo Sepolia.'
+      let message = 'Your transaction has been confirmed on Celo.'
       
       if (txPhase === 'approving') {
         title = 'G$ Allowance Approved!'

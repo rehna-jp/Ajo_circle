@@ -52,7 +52,7 @@ function Toast({ toast, onClose }: { toast: ToastData; onClose: () => void }) {
         )}
         {toast.txHash && (
           <a
-            href={`https://sepolia.celoscan.io/tx/${toast.txHash}`}
+            href={`https://celoscan.io/tx/${toast.txHash}`}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#d67ab1] hover:text-[#60435f] transition"

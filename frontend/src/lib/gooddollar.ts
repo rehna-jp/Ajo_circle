@@ -31,7 +31,6 @@ export const GOODDOLLAR_IDENTITY_URL: string = Envs[GOODDOLLAR_ENV].identityUrl
  * an identity check. Passing null here is intentional and safe for read paths.
  */
 export function buildReadOnlySDK(publicClient: any): IdentitySDK {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new IdentitySDK(publicClient, null as any, GOODDOLLAR_ENV)
 }
 

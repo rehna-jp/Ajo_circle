@@ -64,12 +64,20 @@ contract AjoYieldVault is Ownable, ReentrancyGuard {
     error VaultInUse();
     error CircleHasDeposits();
     error Unauthorized();
+    error NotActiveCircle();
 
     // ─── Modifier ────────────────────────────────────────────────────────────
 
     /// @dev Reverts if the caller is not a whitelisted AjoCircle.
     modifier onlyApprovedCircle() {
         if (!approvedCircles[msg.sender]) revert NotApprovedCircle();
+        _;
+    }
+
+    /// @dev Reverts if the caller is not the active AjoCircle.
+    modifier onlyActiveCircle() {
+        if (!approvedCircles[msg.sender]) revert NotApprovedCircle();
+        if (msg.sender != activeCircle) revert NotActiveCircle();
         _;
     }
 
@@ -114,6 +122,11 @@ contract AjoYieldVault is Ownable, ReentrancyGuard {
         // Enforce single-circle: only allow if no active circle or active circle has no deposits.
         if (activeCircle != address(0) && activeCircle != circle && totalDeposited > 0) {
             revert VaultInUse();
+        }
+        // Auto-revoke previous circle if it has no deposits
+        if (activeCircle != address(0) && activeCircle != circle) {
+            approvedCircles[activeCircle] = false;
+            emit CircleRevoked(activeCircle);
         }
         activeCircle = circle;
         approvedCircles[circle] = true;
@@ -178,7 +191,7 @@ contract AjoYieldVault is Ownable, ReentrancyGuard {
      *
      * @param amount G$ amount to deposit.
      */
-    function deposit(uint256 amount) external onlyApprovedCircle nonReentrant {
+    function deposit(uint256 amount) external onlyActiveCircle nonReentrant {
         IERC20(gDollarToken).safeTransferFrom(msg.sender, address(this), amount);
         totalDeposited += amount;
 
@@ -231,7 +244,7 @@ contract AjoYieldVault is Ownable, ReentrancyGuard {
      *
      * @return total G$ transferred to the caller (principal + yield).
      */
-    function withdrawAll() external onlyApprovedCircle nonReentrant returns (uint256 total) {
+    function withdrawAll() external onlyActiveCircle nonReentrant returns (uint256 total) {
         total = IERC20(gDollarToken).balanceOf(address(this));
         uint256 yieldAmount = total > totalDeposited ? total - totalDeposited : 0;
 

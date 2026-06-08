@@ -7,7 +7,7 @@ import { celo } from 'viem/chains'
 // wallet provider exposed to Privy implements the EIP-1193 `.on` event API.
 export const wagmiConfig = createConfig({
   chains: [celo],
-  connectors: [injected({ chains: [celo] })],
+  connectors: [injected()],
   transports: {
     [celo.id]: http(
       process.env.NEXT_PUBLIC_RPC_URL ?? 'https://forno.celo.org',

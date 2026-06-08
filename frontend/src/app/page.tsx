@@ -51,8 +51,8 @@ export default function Home() {
           </h1>
 
           <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-[#fdf7fa]/80 md:text-xl">
-            Save together with your community. Auto-contribute from your G$ UBI.
-            Earn yield. No trust required.
+            Save together with your community. Pool your G$ contributions.
+            Build trust-free savings circles on Celo.
           </p>
 
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -107,9 +107,9 @@ export default function Home() {
               <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#fdf7fa] text-[#d67ab1] group-hover:bg-[#d67ab1] group-hover:text-white transition-colors duration-300">
                 <RefreshCw className="h-7 w-7 animate-spin-slow" />
               </div>
-              <h3 className="mb-3 text-xl font-bold text-[#60435f]">Auto-Save</h3>
+              <h3 className="mb-3 text-xl font-bold text-[#60435f]">Regular Savings</h3>
               <p className="text-sm leading-relaxed text-gray-600">
-                G$ deducted from your daily UBI. Your pooled circle pot earns yield.
+                Contribute G$ each round. Your pooled circle pot is deployed to earn yield.
               </p>
             </div>
 

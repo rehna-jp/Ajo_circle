@@ -1,8 +1,8 @@
 {
-  "AjoFactory": "0x23195578a5826C146Dc46Db495d2aC4c1A212d2a",
-  "AjoYieldVault": "0xc47428FE8321D69967c8013Ead912F6710C1D903",
+  "AjoFactory": "0x5d872B5fe7334577d15Acbd7E62Dd954930eC85D",
+  "AjoYieldVault": "0xE869345337E1cec4A84De62dA356259C262CB3B5",
   "chainId": 42220,
-  "deployedAt": "1780802613",
+  "deployedAt": "1780916100",
   "gDollar": "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A",
   "mockToken": false,
   "network": "mainnet"

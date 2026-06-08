@@ -1,6 +1,6 @@
 # Ajo Circle
 
-A decentralised rotating savings circle (ROSCA) built on **Celo Sepolia**, denominated in **G$ (GoodDollar)** tokens. Members pool contributions each round; the full pot rotates to one member per round until every member has received a payout.
+A decentralised rotating savings circle (ROSCA) built on **Celo Mainnet**, denominated in **G$ (GoodDollar)** tokens. Members pool contributions each round; the full pot rotates to one member per round until every member has received a payout.
 
 ---
 
@@ -12,7 +12,7 @@ A decentralised rotating savings circle (ROSCA) built on **Celo Sepolia**, denom
 | Frontend | [Next.js 14](https://nextjs.org/) (App Router) · TypeScript · Tailwind CSS |
 | Wallet auth | [Privy](https://privy.io/) (email + embedded wallet fallback) |
 | Chain interaction | [wagmi v2](https://wagmi.sh/) · [viem v2](https://viem.sh/) |
-| Chain | Celo Sepolia testnet (chainId **11142220**) |
+| Chain | Celo Mainnet (chainId **42220**) |
 
 ---
 
@@ -37,7 +37,7 @@ ajo-circle/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml         # forge test + next build on every PR
-└── package.json           # npm workspaces root
+│   └── package.json           # npm workspaces root
 ```
 
 ---
@@ -87,7 +87,7 @@ Edit `frontend/.env.local`:
 
 ```env
 NEXT_PUBLIC_PRIVY_APP_ID=your-privy-app-id
-NEXT_PUBLIC_GOODDOLLAR_ENV=staging
+NEXT_PUBLIC_GOODDOLLAR_ENV=production
 NEXT_PUBLIC_AJO_FACTORY_ADDRESS=0x...deployed-contract-address
 NEXT_PUBLIC_YIELD_VAULT_ADDRESS=0x...yield-vault-address
 NEXT_PUBLIC_G_DOLLAR_ADDRESS=0x...g-dollar-token-address
@@ -106,7 +106,7 @@ npm run type-check
 npm run lint
 ```
 
-### 4. Deploy contracts (Sepolia)
+### 4. Deploy contracts (Mainnet)
 
 ```bash
 # Export your deployer private key (never commit this)
@@ -115,7 +115,7 @@ export PRIVATE_KEY=0x...
 # Optional: Celoscan API key for contract verification
 export CELOSCAN_API_KEY=...
 
-npm run deploy:sepolia
+npm run deploy:mainnet
 ```
 
 Copy the printed contract address into `frontend/.env.local`.
